@@ -1,0 +1,61 @@
+{
+  "level": "A1",
+  "grammar_points": [
+    {
+      "name": "Basic sentence order",
+      "level": "A1",
+      "url_slug": "ASGETNCO",
+      "full_url": "https://resources.allsetlearning.com/chinese/grammar/ASGETNCO",
+      "sentences": [
+        {
+          "hanzi": "我 爱 你。",
+          "pinyin": "Wǒ ài nǐ.",
+          "translation": "I love you.",
+          "is_valid": true,
+          "key_word": null,
+          "audio_filename": null
+        },
+        {
+          "hanzi": "我 吃 苹果。",
+          "pinyin": "Wǒ chī píngguǒ.",
+          "translation": "I eat apples.",
+          "is_valid": true,
+          "key_word": null,
+          "audio_filename": "a1b2c3d4e5f6.mp3"
+        }
+      ]
+    },
+    {
+      "name": "Expressing 'and' with 'he'",
+      "level": "A1",
+      "url_slug": "ASGP0KFF",
+      "full_url": "https://resources.allsetlearning.com/chinese/grammar/ASGP0KFF",
+      "sentences": [
+        {
+          "hanzi": "我 和 你 都 是 学生。",
+          "pinyin": "Wǒ hé nǐ dōu shì xuésheng.",
+          "translation": "You and I are both students.",
+          "is_valid": true,
+          "key_word": "和",
+          "audio_filename": "f6e5d4c3b2a1.mp3"
+        },
+        {
+          "hanzi": "他 和 我 都 不 去。",
+          "pinyin": "Tā hé wǒ dōu bù qù.",
+          "translation": "He and I are both not going.",
+          "is_valid": false,
+          "key_word": "和",
+          "audio_filename": null
+        },
+        {
+          "hanzi": "你 和 他 都 是 老师。",
+          "pinyin": "Nǐ hé tā dōu shì lǎoshī.",
+          "translation": "You and he are both teachers.",
+          "is_valid": true,
+          "key_word": "和",
+          "audio_filename": "b0c1d2e3f4a5.mp3"
+        }
+      ]
+    }
+  ]
+}
