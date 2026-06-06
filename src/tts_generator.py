@@ -5,13 +5,14 @@ from pathlib import Path
 
 import edge_tts
 
+from src.config import get
 from src.models import ExampleSentence, GrammarLevel
 from src.scraper import load_level_data, save_level_data
 from src.utils import get_audio_dir, hash_string
 
 
 def get_voice() -> str:
-    return "zh-CN-XiaoxiaoNeural"
+    return get("tts.voice", "zh-CN-XiaoxiaoNeural")
 
 
 async def generate_audio(text: str, filename: str) -> Path:

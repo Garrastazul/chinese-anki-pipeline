@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from src import scraper, validator, tts_generator, deck_builder
+from src.config import get
 from src.utils import get_audio_dir
 
 logging.basicConfig(
@@ -47,11 +48,14 @@ def install_dependencies() -> None:
 
 
 def run_pipeline(
-    level_name: str = "A1",
+    level_name: str | None = None,
     skip_scrape: bool = False,
     skip_validate: bool = False,
     skip_tts: bool = False,
 ) -> None:
+    if level_name is None:
+        levels = get("levels", ["A1"])
+        level_name = levels[0] if levels else "A1"
     if not skip_scrape:
         logger.info("Step a) Scraping grammar points for %s...", level_name)
         level = scraper.scrape_level(level_name)
@@ -93,7 +97,8 @@ def run_pipeline(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Chinese Grammar Flashcard Pipeline")
-    parser.add_argument("--level", default="A1", help="Grammar level (default: A1)")
+    default_level = (get("levels", ["A1"]) or ["A1"])[0]
+    parser.add_argument("--level", default=default_level, help=f"Grammar level (default: {default_level})")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping step")
     parser.add_argument("--skip-validate", action="store_true", help="Skip validation step")
     parser.add_argument("--skip-tts", action="store_true", help="Skip TTS generation step")

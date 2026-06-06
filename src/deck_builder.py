@@ -7,6 +7,7 @@ from pathlib import Path
 import genanki
 import jieba
 
+from src.config import get
 from src.models import GrammarLevel
 from src.utils import get_audio_dir, get_output_dir, hash_string
 
@@ -256,8 +257,9 @@ def build_sentence_cards(
 def build_deck(
     level: GrammarLevel,
 ) -> tuple[genanki.Deck, dict[str, genanki.Model]]:
+    deck_name = get("anki.deck_name_template", "Chinese Grammar - {level}").format(level=level.level)
     deck_id = int(hash_string(level.level), 16) % 10_000_000_000
-    deck = genanki.Deck(deck_id, f"Chinese Grammar - {level.level}")
+    deck = genanki.Deck(deck_id, deck_name)
     models = create_models()
     notes = build_sentence_cards(level, models)
     for note in notes:

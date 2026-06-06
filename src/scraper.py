@@ -8,12 +8,13 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup, Tag
 
+from src.config import get
 from src.models import ExampleSentence, GrammarLevel, GrammarPoint
 from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://resources.allsetlearning.com/chinese/grammar"
+BASE_URL = get("scraper.base_url", "https://resources.allsetlearning.com/chinese/grammar")
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -138,7 +139,7 @@ def scrape_level(level: str) -> GrammarLevel:
             logger.info("  %s: %d sentences", link["name"], len(sentences))
         except Exception:
             logger.warning("Failed to fetch %s (%s), skipping", link["name"], full_url, exc_info=True)
-        time.sleep(1)
+        time.sleep(get("scraper.request_delay", 1.0))
 
     return GrammarLevel(level=level, grammar_points=grammar_points)
 

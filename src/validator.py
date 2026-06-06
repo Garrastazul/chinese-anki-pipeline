@@ -7,13 +7,14 @@ import time
 
 import requests
 
+from src.config import get
 from src.models import ExampleSentence, GrammarLevel, GrammarPoint
 from src.scraper import load_level_data, save_level_data
 from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_API = "http://localhost:11434"
+OLLAMA_API = get("ollama.host", "http://localhost:11434")
 
 
 def ensure_ollama_running() -> None:
@@ -32,7 +33,9 @@ def ensure_ollama_running() -> None:
         ) from e
 
 
-def ensure_model(model_name: str = "qwen2.5:7b") -> None:
+def ensure_model(model_name: str | None = None) -> None:
+    if model_name is None:
+        model_name = get("ollama.model", "qwen2.5:7b")
     subprocess.run(["wsl", "ollama", "pull", model_name], check=True)
 
 
@@ -57,8 +60,9 @@ def validate_sentence(
         "que ilustra el punto gramatical. Si no puedes identificar una, pon \"\"."
     )
 
+    model = get("ollama.model", "qwen2.5:7b")
     payload = {
-        "model": "qwen2.5:7b",
+        "model": model,
         "prompt": prompt,
         "stream": False,
     }
@@ -118,8 +122,9 @@ def main() -> None:
     logger.info("Ensuring Ollama is running...")
     ensure_ollama_running()
 
-    logger.info("Ensuring model qwen2.5:7b is available...")
-    ensure_model("qwen2.5:7b")
+    model = get("ollama.model", "qwen2.5:7b")
+    logger.info("Ensuring model %s is available...", model)
+    ensure_model(model)
 
     logger.info("Loading A1 data...")
     level = load_level_data("A1")

@@ -1,0 +1,18 @@
+{
+  "levels": ["A1"],
+  "ollama": {
+    "model": "qwen2.5:7b",
+    "host": "http://localhost:11434"
+  },
+  "tts": {
+    "voice": "zh-CN-XiaoxiaoNeural"
+  },
+  "anki": {
+    "deck_name_template": "Chinese Grammar - {level}",
+    "card_types": ["hanzi_full", "en_hanzi", "cloze", "ordenar"]
+  },
+  "scraper": {
+    "base_url": "https://resources.allsetlearning.com/chinese/grammar",
+    "request_delay": 1.0
+  }
+}
