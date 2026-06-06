@@ -52,8 +52,3 @@ def sample_grammar_html() -> str:
     path = Path(__file__).parent / "fixtures" / "sample_grammar_page.html"
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
-
-@pytest.fixture
-def sample_json_data() -> dict:
-    path = Path(__file__).parent / "fixtures" / "sample_level_data.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}

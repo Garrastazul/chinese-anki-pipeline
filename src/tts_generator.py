@@ -29,7 +29,9 @@ async def generate_audio(text: str, filename: str) -> Path:
 def generate_sentence_audio(sentence: ExampleSentence) -> ExampleSentence:
     h = hash_string(sentence.hanzi)
     filename = f"{h}.mp3"
-    asyncio.run(generate_audio(sentence.hanzi, filename))
+    audio_dir = get_audio_dir()
+    if not (audio_dir / filename).exists():
+        asyncio.run(generate_audio(sentence.hanzi, filename))
     sentence.audio_filename = filename
     return sentence
 

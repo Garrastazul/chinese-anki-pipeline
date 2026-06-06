@@ -57,7 +57,7 @@ def test_grammar_level_repr(sample_level):
     assert "A1" in r
 
 
-def test_example_sentence_immutability():
+def test_example_sentence_fields_are_mutable():
     s = ExampleSentence(hanzi="你好", pinyin="Nǐ hǎo", translation="Hello")
     assert hasattr(s, "hanzi")
 

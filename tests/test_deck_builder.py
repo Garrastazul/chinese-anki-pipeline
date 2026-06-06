@@ -32,7 +32,7 @@ class TestCreateModels:
 
     def test_cloze_model_type(self):
         models = create_models()
-        assert models["cloze"].model_type == 1
+        assert models["cloze"].model_type == genanki.CLOZE_MODEL.model_type
 
     def test_models_have_different_ids(self):
         models = create_models()

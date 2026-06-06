@@ -162,9 +162,25 @@ class TestScrapeLevel:
     @patch("src.scraper.fetch_grammar_point_page")
     @patch("src.scraper.time.sleep")
     def test_scrape_level_basic(self, mock_sleep, mock_fetch_point, mock_fetch):
-        mock_fetch.return_value = "<html><table class='wikitable'><tr><td><a href='/test'>Point A</a></td><td>Pattern</td><td><span class='liju'>例句</span></td></tr></table></html>"
-        mock_fetch_point.return_value = "<html><table class='table-bordered'><tr><td>我 <span class='pinyin'>Wǒ</span></td><td>hello</td></tr></table></html>"
-
+        mock_fetch.return_value = (
+            '<html><table class="wikitable">'
+            '<tr><th>Grammar Point</th><th>Pattern</th><th>Examples</th></tr>'
+            '<tr><td><a href="/chinese/grammar/ASGETNCO">Point A</a></td>'
+            '<td>Subj. + Verb</td>'
+            '<td><span class="liju">例句</span></td></tr>'
+            '</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><table class="table-bordered">'
+            '<tr><td>我 <span class="pinyin">Wǒ</span></td><td>hello</td></tr>'
+            '</table></html>'
+        )
         level = scrape_level("A1")
         assert isinstance(level, GrammarLevel)
         assert level.level == "A1"
+        assert len(level.grammar_points) == 1
+        assert level.grammar_points[0].name == "Point A"
+        assert level.grammar_points[0].url_slug == "ASGETNCO"
+        assert len(level.grammar_points[0].sentences) == 1
+        assert level.grammar_points[0].sentences[0].hanzi == "我"
+        assert level.grammar_points[0].sentences[0].pinyin == "Wǒ"
