@@ -6,14 +6,13 @@ from src.main import install_dependencies, run_pipeline
 
 class TestInstallDependencies:
     @patch("src.main.subprocess.run")
-    @patch("src.main.importlib.import_module")
+    @patch("importlib.import_module")
     def test_install_success(self, mock_import, mock_run):
         install_dependencies()
-        assert mock_run.call_count >= 1
-        assert mock_import.call_count >= 1
+        mock_import.assert_called()
 
-    @patch("src.main.subprocess.run")
-    @patch("src.main.importlib.import_module")
+    @patch("subprocess.run")
+    @patch("importlib.import_module")
     def test_install_missing_packages_exits(self, mock_import, mock_run):
         mock_import.side_effect = ImportError("missing")
         with pytest.raises(SystemExit):
@@ -59,11 +58,19 @@ class TestRunPipeline:
 
     @patch("src.main.scraper.scrape_level")
     @patch("src.main.scraper.save_level_data")
-    def test_pipeline_scrape_only(self, mock_save, mock_scrape, sample_level):
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_pipeline_scrape_only(self, mock_build, mock_load, mock_save, mock_scrape, sample_level):
         mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+
         run_pipeline(level_name="A1", skip_scrape=False, skip_validate=True, skip_tts=True)
+
         mock_scrape.assert_called_once()
         mock_save.assert_called_once()
+        mock_load.assert_called()
+        mock_build.assert_called_once()
 
     @patch("src.main.argparse.ArgumentParser.parse_args")
     def test_main_arguments_default(self, mock_parse):

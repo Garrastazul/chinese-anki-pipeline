@@ -66,7 +66,7 @@ def create_models() -> dict[str, genanki.Model]:
     m3 = genanki.Model(
         1607392321,
         "Cloze",
-        model_type=genanki.CLOZE_MODEL,
+        model_type=1,
         fields=[
             {"name": "HanziCloze"},
             {"name": "PinyinCloze"},
@@ -112,24 +112,35 @@ def create_models() -> dict[str, genanki.Model]:
 
 
 def _get_keyword_pinyin(hanzi: str, pinyin_str: str, keyword: str) -> str:
-    start = hanzi.find(keyword)
-    if start == -1 or not pinyin_str:
+    if not keyword or not pinyin_str:
         return ""
 
     tokens = pinyin_str.split()
-    char_count = len(hanzi)
 
-    char_to_token: dict[int, int] = {}
-    for i in range(char_count):
-        char_to_token[i] = i if i < len(tokens) else len(tokens) - 1
+    hanzi_parts = hanzi.split()
+    if len(hanzi_parts) == len(tokens):
+        for i, part in enumerate(hanzi_parts):
+            if keyword in part:
+                return tokens[i]
 
-    end = start + len(keyword)
-    first_ti = char_to_token.get(start, 0)
-    last_ti = char_to_token.get(end - 1, len(tokens) - 1)
+    words = list(jieba.cut(hanzi))
+    if len(words) == len(tokens):
+        for i, word in enumerate(words):
+            if keyword in word:
+                return tokens[i]
 
-    if first_ti < len(tokens) and last_ti < len(tokens):
-        return " ".join(tokens[first_ti : last_ti + 1])
-    return ""
+    start = hanzi.find(keyword)
+    if start == -1:
+        return ""
+    non_space = [i for i, c in enumerate(hanzi) if c != " "]
+    if not non_space:
+        return ""
+    kw_start = sum(1 for i in non_space if i < start)
+    kw_end = kw_start + len(keyword) - 1
+    total = len(non_space)
+    first_ti = min(kw_start * len(tokens) // total, len(tokens) - 1)
+    last_ti = min(kw_end * len(tokens) // total, len(tokens) - 1)
+    return " ".join(tokens[first_ti : last_ti + 1])
 
 
 def build_sentence_cards(

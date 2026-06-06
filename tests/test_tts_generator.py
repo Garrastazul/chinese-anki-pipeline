@@ -25,6 +25,7 @@ class TestGenerateAudio:
         assert result == tmp_path / "test123.mp3"
         mock_tts.save.assert_awaited_once_with(str(tmp_path / "test123.mp3"))
 
+    @pytest.mark.asyncio
     @patch("src.tts_generator.get_audio_dir")
     async def test_generate_audio_skips_existing(self, mock_dir, tmp_path):
         mock_dir.return_value = tmp_path
