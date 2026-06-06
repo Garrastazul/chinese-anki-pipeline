@@ -285,6 +285,11 @@ def export_deck(
     return filepath
 
 
+def build_and_export(level: GrammarLevel) -> Path:
+    deck, models = build_deck(level)
+    return export_deck(deck, models, level.level)
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
