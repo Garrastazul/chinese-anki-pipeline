@@ -32,10 +32,11 @@ class TestPaths:
 
     def test_all_paths_under_project_root(self):
         root = get_project_root()
-        assert str(get_audio_dir()).startswith(str(root))
-        assert str(get_output_dir()).startswith(str(root))
-        assert str(get_data_raw_dir()).startswith(str(root))
-        assert str(get_data_processed_dir()).startswith(str(root))
+        for d in [get_audio_dir(), get_output_dir(), get_data_raw_dir(), get_data_processed_dir()]:
+            try:
+                d.relative_to(root)
+            except ValueError:
+                pytest.fail(f"{d} is not under project root {root}")
 
 
 class TestHashString:

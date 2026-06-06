@@ -1,22 +1,30 @@
 # Chinese Grammar Flashcards
 
-Genera mazos de Anki con ejercicios de gramática china a partir de [Chinese Grammar Wiki](https://resources.allsetlearning.com/chinese/grammar).
+Generates Anki decks with Chinese grammar exercises from [Chinese Grammar Wiki](https://resources.allsetlearning.com/chinese/grammar).
 
-## Requisitos
+## Requirements
 
 - Python 3.10+
-- [Ollama](https://ollama.com/) en WSL (con `qwen2.5:7b`)
-- [Anki](https://apps.ankiweb.net/) (para importar el `.apkg`)
+- [Ollama](https://ollama.com/) on WSL (with `qwen2.5:7b`)
+- [Anki](https://apps.ankiweb.net/) (to import the `.apkg`)
+- Python dependencies: `requests`, `beautifulsoup4`, `lxml`, `edge-tts`, `genanki`, `jieba`
 
-## Instalación
+## Setup
 
 ```powershell
 .\setup.ps1
 ```
 
-El script instala las dependencias Python, inicia Ollama en WSL y descarga el modelo `qwen2.5:7b`.
+The script installs Python dependencies, starts Ollama in WSL, and downloads the `qwen2.5:7b` model.
 
-## Uso
+## Tests
+
+```powershell
+pip install -e ".[test]"
+pytest tests/ -v
+```
+
+## Usage
 
 ```powershell
 python src/main.py --level A1
@@ -24,53 +32,53 @@ python src/main.py --level A1
 
 ### Flags
 
-| Flag | Descripción |
+| Flag | Description |
 |------|-------------|
-| `--level` | Nivel a scrapear (`A1`, `A2`, `B1`, `B2`, `HSK1`, etc.). Default: `A1` |
-| `--skip-scrape` | Saltar scraping (usa caché existente) |
-| `--skip-validate` | Saltar validación con Ollama |
-| `--skip-tts` | Saltar generación de audio |
-| `--install` | Instalar dependencias y salir |
+| `--level` | Level to scrape (`A1`, `A2`, `B1`, `B2`, `HSK1`, etc.). Default: `A1` |
+| `--skip-scrape` | Skip scraping (use existing cache) |
+| `--skip-validate` | Skip Ollama validation |
+| `--skip-tts` | Skip audio generation |
+| `--install` | Install dependencies and exit |
 
-## Tipos de carta
+## Card types
 
-| Tipo | Frente | Dorso |
-|------|--------|-------|
-| Hanzi → Todo | Hanzi | Pinyin + Traducción + Audio + Link wiki |
-| EN → Hanzi | Traducción EN | Hanzi + Pinyin + Audio + Link wiki |
-| Cloze | Hanzi/Pinyin con palabra oculta | Palabra clave + Traducción + Link wiki |
-| Ordenar | Palabras desordenadas | Hanzi correcto + Pinyin + Traducción + Audio + Link wiki |
+| Type | Front | Back |
+|------|-------|------|
+| Hanzi → Full | Hanzi | Pinyin + Translation + Audio + Wiki link |
+| EN → Hanzi | Translation EN | Hanzi + Pinyin + Audio + Wiki link |
+| Cloze | Hanzi/Pinyin with hidden word | Keyword + Translation + Wiki link |
+| Reorder | Scrambled words | Correct Hanzi + Pinyin + Translation + Audio + Wiki link |
 
-## Estructura del proyecto
+## Project structure
 
 ```
 grammar-flashcards/
-├── audio/                  # Archivos TTS (.mp3)
+├── audio/                  # TTS audio files (.mp3)
 ├── data/
-│   └── processed/          # JSON por nivel (cache)
-├── output/                 # Mazos .apkg generados
+│   └── processed/          # JSON per level (cache)
+├── output/                 # Generated .apkg decks
 ├── src/
-│   ├── main.py             # CLI y pipeline principal
-│   ├── scraper.py          # Scraping de Chinese Grammar Wiki
-│   ├── validator.py        # Validación con Ollama (qwen2.5:7b)
-│   ├── tts_generator.py    # Síntesis de voz (edge-tts, Xiaoxiao Neural)
-│   ├── deck_builder.py     # Construcción del mazo Anki (genanki)
+│   ├── main.py             # CLI and main pipeline
+│   ├── scraper.py          # Chinese Grammar Wiki scraping
+│   ├── validator.py        # Ollama validation (qwen2.5:7b)
+│   ├── tts_generator.py    # Speech synthesis (edge-tts, Xiaoxiao Neural)
+│   ├── deck_builder.py     # Anki deck building (genanki)
 │   ├── models.py           # Dataclasses (ExampleSentence, GrammarPoint, GrammarLevel)
-│   └── utils.py            # Utilidades (paths, hash)
-├── setup.ps1               # Script de instalación
-└── pyproject.toml          # Dependencias Python
+│   └── utils.py            # Utilities (paths, hash)
+├── setup.ps1               # Setup script
+└── pyproject.toml          # Python dependencies
 ```
 
 ## Pipeline
 
-1. **Scrapear** — Obtiene puntos gramaticales y oraciones desde Chinese Grammar Wiki
-2. **Validar** — Ollama (`qwen2.5:7b`) valida cada oración y detecta la palabra clave para cloze
-3. **TTS** — Genera audio con `edge-tts` (voz `zh-CN-XiaoxiaoNeural`)
-4. **Construir** — Ensambla el mazo `.apkg` con `genanki`
+1. **Scrape** — Fetch grammar points and sentences from Chinese Grammar Wiki
+2. **Validate** — Ollama (`qwen2.5:7b`) validates each sentence and detects the keyword for cloze
+3. **TTS** — Generate audio with `edge-tts` (voice `zh-CN-XiaoxiaoNeural`)
+4. **Build** — Assemble the `.apkg` deck with `genanki`
 
-El mazo generado se importa en Anki con doble clic en el archivo `.apkg`.
+The generated deck can be imported into Anki by double-clicking the `.apkg` file.
 
-## Notas
+## Notes
 
-- Los GUID de las notas usan un hash del hanzi → al re-importar no se duplican
-- El enlace a la wiki aparece en la solución de cada carta
+- Note GUIDs use a hash of the hanzi → re-importing does not create duplicates
+- The wiki link appears on the answer side of each card

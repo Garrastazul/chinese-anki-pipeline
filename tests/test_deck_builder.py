@@ -4,20 +4,20 @@ from pathlib import Path
 import genanki
 from src.models import GrammarLevel, GrammarPoint, ExampleSentence
 from src.deck_builder import (
-    create_models, _get_keyword_pinyin, build_sentence_cards,
-    build_deck, export_deck, build_and_export,
+    create_models, _get_keyword_pinyin, _apply_cloze, _apply_pinyin_cloze,
+    build_sentence_cards, build_deck, export_deck, build_and_export,
 )
 
 
 class TestCreateModels:
     def test_returns_dict_with_expected_keys(self):
         models = create_models()
-        assert set(models.keys()) == {"hanzi_full", "en_hanzi", "cloze", "ordenar"}
+        assert set(models.keys()) == {"hanzi_full", "en_hanzi", "cloze", "reorder"}
 
     def test_models_are_genanki_model(self):
         models = create_models()
         for key, model in models.items():
-            assert isinstance(model, genanki.Model), f"{key} no es genanki.Model"
+            assert isinstance(model, genanki.Model), f"{key} is not a genanki.Model"
 
     def test_hanzi_full_has_all_fields(self):
         models = create_models()
@@ -43,7 +43,7 @@ class TestCreateModels:
 class TestGetKeywordPinyin:
     def test_simple_keyword(self):
         result = _get_keyword_pinyin("我 爱 你", "Wǒ ài nǐ", "爱")
-        assert "ài" in result
+        assert result == "ài"
 
     def test_keyword_not_found_returns_empty(self):
         result = _get_keyword_pinyin("你好", "Nǐ hǎo", "x")
@@ -55,7 +55,84 @@ class TestGetKeywordPinyin:
 
     def test_multi_char_keyword(self):
         result = _get_keyword_pinyin("我们 没有 钱", "Wǒmen méiyǒu qián", "没有")
-        assert "méiyǒu" in result
+        assert result == "méiyǒu"
+
+    def test_keyword_with_spaces(self):
+        result = _get_keyword_pinyin("我 没 有 钱", "Wǒ méi yǒu qián", "没 有")
+        assert result == "méi yǒu"
+
+    def test_keyword_with_spaces_strategy2(self):
+        result = _get_keyword_pinyin("我没钱", "Wǒ méi qián", "没")
+        assert result == "méi"
+
+
+class TestApplyCloze:
+    def test_simple_keyword(self):
+        result = _apply_cloze("我爱你", "爱")
+        assert result == "我{{c1::爱}}你"
+
+    def test_keyword_with_spaces(self):
+        result = _apply_cloze("我 爱 你", "爱")
+        assert result == "我 {{c1::爱}} 你"
+
+    def test_keyword_inside_word_uses_jieba(self):
+        result = _apply_cloze("但是 是", "是")
+        assert result == "但是 {{c1::是}}"
+
+    def test_keyword_with_spaces_multiword(self):
+        result = _apply_cloze("我 没 有 钱", "没 有")
+        assert result == "我 {{c1::没 有}} 钱"
+
+    def test_keyword_not_found(self):
+        result = _apply_cloze("你好", "x")
+        assert result == "你好"
+
+
+class TestApplyPinyinCloze:
+    def test_simple_pinyin_cloze(self):
+        result = _apply_pinyin_cloze("我 爱 你", "Wǒ ài nǐ", "爱")
+        assert result == "Wǒ {{c1::ài}} nǐ"
+
+    def test_pinyin_cloze_preserves_correct_token(self):
+        result = _apply_pinyin_cloze("事实 是", "shì shí shì", "是")
+        assert result == "shì shí {{c1::shì}}"
+
+    def test_pinyin_cloze_no_substring_collision(self):
+        result = _apply_pinyin_cloze("晚上 是", "wǎnshàng shì", "是")
+        assert result == "wǎnshàng {{c1::shì}}"
+
+    def test_pinyin_cloze_multiword(self):
+        result = _apply_pinyin_cloze("我 没 有 钱", "Wǒ méi yǒu qián", "没 有")
+        assert result == "Wǒ {{c1::méi yǒu}} qián"
+
+    def test_pinyin_cloze_not_found(self):
+        result = _apply_pinyin_cloze("你好", "Nǐ hǎo", "x")
+        assert result == "Nǐ hǎo"
+
+
+class TestClozeConsistency:
+    """_apply_cloze and _apply_pinyin_cloze must hide the same position."""
+
+    def test_danshi_shi(self):
+        hanzi = "但是 是"
+        pinyin = "dàn shì shì"
+        kw = "是"
+        h_cloze = _apply_cloze(hanzi, kw)
+        p_cloze = _apply_pinyin_cloze(hanzi, pinyin, kw)
+        assert h_cloze == "但是 {{c1::是}}"
+        assert p_cloze == "dàn shì {{c1::shì}}"
+
+    def test_shi_shishi(self):
+        hanzi = "是 事实"
+        pinyin = "shì shì shí"
+        kw = "是"
+        jieba_lcut_result = ["是", " ", "事实"]
+        with patch("src.deck_builder.jieba.lcut", return_value=jieba_lcut_result):
+            with patch("src.deck_builder.jieba.cut", return_value=iter(jieba_lcut_result)):
+                h_cloze = _apply_cloze(hanzi, kw)
+                p_cloze = _apply_pinyin_cloze(hanzi, pinyin, kw)
+        assert h_cloze == "{{c1::是}} 事实"
+        assert p_cloze == "{{c1::shì}} shì shí"
 
 
 class TestBuildSentenceCards:
@@ -68,8 +145,7 @@ class TestBuildSentenceCards:
         level = GrammarLevel(level="A1", grammar_points=[gp])
         models = create_models()
 
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            notes = build_sentence_cards(level, models)
+        notes = build_sentence_cards(level, models)
 
         assert len(notes) == 4
 
@@ -80,9 +156,9 @@ class TestBuildSentenceCards:
         level = GrammarLevel(level="A1", grammar_points=[gp])
         models = create_models()
 
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            notes = build_sentence_cards(level, models)
+        notes = build_sentence_cards(level, models)
         assert len(notes) == 3
+
 
     def test_skips_cloze_when_no_keyword(self):
         s = ExampleSentence(hanzi="好 吗", pinyin="Hǎo ma", translation="OK?", is_valid=True, key_word=None)
@@ -90,19 +166,17 @@ class TestBuildSentenceCards:
         level = GrammarLevel(level="A1", grammar_points=[gp])
         models = create_models()
 
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            notes = build_sentence_cards(level, models)
+        notes = build_sentence_cards(level, models)
         assert len(notes) == 3
         assert models is not None
 
-    def test_skips_ordenar_when_single_word(self):
+    def test_skips_reorder_when_single_word(self):
         s = ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word="好")
         gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
         level = GrammarLevel(level="A1", grammar_points=[gp])
         models = create_models()
 
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            notes = build_sentence_cards(level, models)
+        notes = build_sentence_cards(level, models)
         assert len(notes) == 3
 
     def test_all_notes_have_guid(self):
@@ -111,8 +185,7 @@ class TestBuildSentenceCards:
         level = GrammarLevel(level="A1", grammar_points=[gp])
         models = create_models()
 
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            notes = build_sentence_cards(level, models)
+        notes = build_sentence_cards(level, models)
         for note in notes:
             assert note.guid is not None
             assert len(note.guid) > 0
@@ -123,16 +196,14 @@ class TestBuildSentenceCards:
         level = GrammarLevel(level="A1", grammar_points=[gp])
         models = create_models()
 
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            notes = build_sentence_cards(level, models)
+        notes = build_sentence_cards(level, models)
         guids = [n.guid for n in notes]
         assert len(guids) == len(set(guids))
 
 
 class TestBuildDeck:
     def test_build_deck_returns_deck_and_models(self, sample_level):
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            deck, models = build_deck(sample_level)
+        deck, models = build_deck(sample_level)
         assert isinstance(deck, genanki.Deck)
         assert isinstance(models, dict)
         assert "Chinese Grammar - A1" in deck.name
@@ -140,13 +211,12 @@ class TestBuildDeck:
 
 class TestExportDeck:
     def test_export_creates_apkg(self, sample_level, tmp_path):
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            deck, models = build_deck(sample_level)
+        deck, models = build_deck(sample_level)
 
         with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
             with patch("src.deck_builder.get_audio_dir", return_value=tmp_path / "audio"):
                 with patch("genanki.Package.write_to_file") as mock_write:
-                    export_deck(deck, models, "A1")
+                    export_deck(deck, models, sample_level)
                     mock_write.assert_called_once()
                     path_arg = mock_write.call_args[0][0]
                     assert "a1" in path_arg.lower()
@@ -155,11 +225,10 @@ class TestExportDeck:
 
 class TestBuildAndExport:
     def test_build_and_export_returns_path(self, sample_level, tmp_path):
-        with patch("src.deck_builder.random.shuffle", return_value=None):
-            with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
-                with patch("src.deck_builder.get_audio_dir", return_value=tmp_path / "audio"):
-                    with patch("genanki.Package.write_to_file") as mock_write:
-                        mock_write.return_value = None
-                        result = build_and_export(sample_level)
-                        mock_write.assert_called_once()
-                        assert result is not None
+        with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
+            with patch("src.deck_builder.get_audio_dir", return_value=tmp_path / "audio"):
+                with patch("genanki.Package.write_to_file") as mock_write:
+                    mock_write.return_value = None
+                    result = build_and_export(sample_level)
+                    mock_write.assert_called_once()
+                    assert result is not None

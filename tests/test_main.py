@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from pathlib import Path
 from src.main import install_dependencies, run_pipeline
 
+
 class TestInstallDependencies:
     @patch("src.main.subprocess.run")
     @patch("src.main.importlib.import_module")
@@ -40,6 +41,7 @@ class TestRunPipeline:
         mock_ensure_ollama.assert_called_once()
         mock_ensure_model.assert_called_once()
         mock_tts.assert_called_once()
+        mock_load.assert_not_called()
         mock_build.assert_called_once()
 
     @patch("src.main.scraper.load_level_data")
@@ -61,5 +63,5 @@ class TestRunPipeline:
         run_pipeline(level_name="A1", skip_scrape=False, skip_validate=True, skip_tts=True)
         mock_scrape.assert_called_once()
         mock_save.assert_called_once()
-        mock_load.assert_called()
+        mock_load.assert_not_called()
         mock_build.assert_called_once()

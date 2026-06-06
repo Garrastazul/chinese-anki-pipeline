@@ -11,19 +11,19 @@ class TestGetVoice:
         assert "Xiaoxiao" in voice
 
 class TestGenerateSentenceAudio:
-    @patch("src.tts_generator.asyncio.run")
+    @patch("src.tts_generator._run_async")
     @patch("src.tts_generator.hash_string")
-    def test_generates_and_updates_filename(self, mock_hash, mock_asyncio_run):
+    def test_generates_and_updates_filename(self, mock_hash, mock_run):
         mock_hash.return_value = "abc123def456"
         s = ExampleSentence(hanzi="你好", pinyin="Nǐ hǎo", translation="Hello")
         result = generate_sentence_audio(s)
         assert result.audio_filename == "abc123def456.mp3"
         mock_hash.assert_called_once_with("你好")
-        mock_asyncio_run.assert_called_once()
+        mock_run.assert_called_once()
 
-    @patch("src.tts_generator.asyncio.run")
+    @patch("src.tts_generator._run_async")
     @patch("src.tts_generator.hash_string")
-    def test_does_not_regenerate_existing(self, mock_hash, mock_asyncio_run, tmp_path):
+    def test_does_not_regenerate_existing(self, mock_hash, mock_run, tmp_path):
         mock_hash.return_value = "existingfile"
         (tmp_path / "existingfile.mp3").write_text("dummy")
         s = ExampleSentence(hanzi="你好", pinyin="Nǐ hǎo", translation="Hello")
@@ -32,8 +32,7 @@ class TestGenerateSentenceAudio:
             result = generate_sentence_audio(s)
 
         assert result.audio_filename == "existingfile.mp3"
-        # asyncio.run no debería llamarse porque el archivo ya existe
-        mock_asyncio_run.assert_not_called()
+        mock_run.assert_not_called()
 
 class TestGenerateLevelAudio:
     @patch("src.tts_generator.generate_sentence_audio")

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import logging
 from pathlib import Path
 
 import edge_tts
@@ -9,6 +11,8 @@ from src.config import get
 from src.models import ExampleSentence, GrammarLevel
 from src.scraper import load_level_data, save_level_data
 from src.utils import get_audio_dir, hash_string
+
+logger = logging.getLogger(__name__)
 
 
 def get_voice() -> str:
@@ -26,13 +30,29 @@ async def generate_audio(text: str, filename: str) -> Path:
     return filepath
 
 
+def _run_async(coro):
+    """Run an async coroutine safely from sync code, even if a loop is running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        future = pool.submit(asyncio.run, coro)
+        return future.result()
+
+
 def generate_sentence_audio(sentence: ExampleSentence) -> ExampleSentence:
     h = hash_string(sentence.hanzi)
     filename = f"{h}.mp3"
     audio_dir = get_audio_dir()
     if not (audio_dir / filename).exists():
-        asyncio.run(generate_audio(sentence.hanzi, filename))
-    sentence.audio_filename = filename
+        try:
+            _run_async(generate_audio(sentence.hanzi, filename))
+            sentence.audio_filename = filename
+        except Exception:
+            logger.warning("Failed to generate audio for sentence '%s': %s", sentence.hanzi, filename, exc_info=True)
+    else:
+        sentence.audio_filename = filename
     return sentence
 
 

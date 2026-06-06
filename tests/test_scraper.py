@@ -24,9 +24,7 @@ class TestExtractHanzi:
         soup = BeautifulSoup(html, "lxml")
         cell = soup.find("td")
         result = _extract_hanzi(cell)
-        assert "我" in result
-        assert "爱" in result
-        assert "你" in result
+        assert result == "我 爱你"
         assert "ài" not in result
 
     def test_extract_hanzi_no_pinyin(self):

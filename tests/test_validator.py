@@ -1,3 +1,5 @@
+import subprocess
+
 import pytest
 from unittest.mock import patch, MagicMock
 import json
@@ -39,6 +41,18 @@ class TestEnsureModel:
         ensure_model("llama3:8b")
         args = mock_run.call_args[0][0]
         assert "llama3:8b" in args
+
+    @patch("src.validator.subprocess.run")
+    def test_ensure_model_file_not_found(self, mock_run):
+        mock_run.side_effect = FileNotFoundError("wsl not found")
+        ensure_model("test-model")
+        mock_run.assert_called_once()
+
+    @patch("src.validator.subprocess.run")
+    def test_ensure_model_called_process_error(self, mock_run):
+        mock_run.side_effect = subprocess.CalledProcessError(1, "wsl ollama pull test-model", stderr="model not found")
+        ensure_model("test-model")
+        mock_run.assert_called_once()
 
 
 class TestValidateSentence:
@@ -115,6 +129,61 @@ class TestValidateSentence:
 
         result = validate_sentence(sample_sentence, "Test")
         assert result["is_valid"] is True
+
+    @patch("src.validator.requests.post")
+    def test_markdown_fence_no_closing(self, mock_post, sample_sentence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "response": '```json\n{"is_valid": true, "key_word": "和"}'
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        result = validate_sentence(sample_sentence, "Test")
+        assert result["is_valid"] is True
+        assert result["key_word"] == "和"
+
+    @patch("src.validator.requests.post")
+    def test_markdown_fence_inline_closing(self, mock_post, sample_sentence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "response": '```json\n{"is_valid": true, "key_word": "和"}```'
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        result = validate_sentence(sample_sentence, "Test")
+        assert result["is_valid"] is True
+        assert result["key_word"] == "和"
+
+    @patch("src.validator.requests.post")
+    def test_markdown_fence_trailing_text(self, mock_post, sample_sentence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "response": '```json\n{"is_valid": true, "key_word": "和"}\n``` some trailing text'
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        result = validate_sentence(sample_sentence, "Test")
+        assert result["is_valid"] is True
+        assert result["key_word"] == "和"
+
+    @patch("src.validator.requests.post")
+    def test_retry_three_attempts(self, mock_post, sample_sentence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"response": '{"is_valid": true, "key_word": "ok"}'}
+        mock_resp.raise_for_status.return_value = None
+        mock_post.side_effect = [
+            requests.Timeout("timeout"),
+            requests.Timeout("timeout2"),
+            mock_resp,
+        ]
+
+        result = validate_sentence(sample_sentence, "Test")
+        assert result["is_valid"] is True
+        assert result["key_word"] == "ok"
+        assert mock_post.call_count == 3
 
 
 class TestValidateGrammarPoint:

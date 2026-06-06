@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import time
 
@@ -14,50 +15,59 @@ from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_API = get("ollama.host", "http://localhost:11434")
+def _ollama_api() -> str:
+    return get("ollama.host", "http://localhost:11434")
 
 
 def ensure_ollama_running() -> None:
-    subprocess.run(
-        ["wsl", "bash", "-c", "ollama serve > /dev/null 2>&1 &"],
-        capture_output=True,
-    )
+    try:
+        subprocess.run(
+            ["wsl", "bash", "-c", "ollama serve > /dev/null 2>&1 &"],
+            capture_output=True,
+        )
+    except (FileNotFoundError, PermissionError, OSError):
+        logger.warning("WSL not found or not accessible, assuming Ollama is running natively")
     time.sleep(3)
     try:
-        resp = requests.get(f"{OLLAMA_API}/api/tags", timeout=5)
+        resp = requests.get(f"{_ollama_api()}/api/tags", timeout=5)
         resp.raise_for_status()
     except requests.RequestException as e:
         raise RuntimeError(
             "Ollama is not running or not accessible at "
-            f"{OLLAMA_API}/api/tags"
+            f"{_ollama_api()}/api/tags"
         ) from e
 
 
 def ensure_model(model_name: str | None = None) -> None:
     if model_name is None:
         model_name = get("ollama.model", "qwen2.5:7b")
-    subprocess.run(["wsl", "ollama", "pull", model_name], check=True)
+    try:
+        subprocess.run(["wsl", "ollama", "pull", model_name], check=True, capture_output=True, text=True)
+    except FileNotFoundError:
+        logger.warning("WSL not found, cannot auto-pull model %s", model_name)
+    except subprocess.CalledProcessError as e:
+        logger.warning("Failed to pull model %s (exit code %d): %s", model_name, e.returncode, e.stderr.strip() if e.stderr else "unknown error")
 
 
 def validate_sentence(
     sentence: ExampleSentence, grammar_point_name: str
 ) -> dict:
     prompt = (
-        "Eres un profesor de chino mandarín. Valida la siguiente oración:\n"
+        "You are a Mandarin Chinese teacher. Validate the following sentence:\n"
         "\n"
-        f"Punto gramatical: {grammar_point_name}  "
+        f"Grammar point: {grammar_point_name}  "
         f"Hanzi: {sentence.hanzi}  "
         f"Pinyin: {sentence.pinyin}  "
-        f"Traducción: {sentence.translation}\n"
+        f"Translation: {sentence.translation}\n"
         "\n"
-        "Responde en el siguiente formato JSON estricto sin markdown:\n"
+        "Respond in the following strict JSON format without markdown:\n"
         '{ "is_valid": true/false, "hanzi_errors": "", '
         '"pinyin_errors": "", "translation_errors": "", '
-        '"key_word": "la palabra clave (en hanzi) que ejemplifica este punto gramatical", '
+        '"key_word": "the keyword (in hanzi) that exemplifies this grammar point", '
         '"notes": "" }\n'
         "\n"
-        'key_word debe ser la palabra específica (ej: "和", "了", "的") '
-        "que ilustra el punto gramatical. Si no puedes identificar una, pon \"\"."
+        'key_word must be the specific word (e.g. "和", "了", "的") '
+        "that illustrates the grammar point. If you cannot identify one, set it to \"\"."
     )
 
     model = get("ollama.model", "qwen2.5:7b")
@@ -65,37 +75,47 @@ def validate_sentence(
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "format": "json",
+        "options": {
+            "num_predict": 300,
+            "temperature": 0,
+        },
     }
 
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             resp = requests.post(
-                f"{OLLAMA_API}/api/generate", json=payload, timeout=60
+                f"{_ollama_api()}/api/generate", json=payload, timeout=60
             )
             resp.raise_for_status()
             data = resp.json()
             response_text = (data.get("response") or "").strip()
 
             if response_text.startswith("```"):
-                lines = response_text.splitlines()
-                if len(lines) >= 3:
-                    response_text = "\n".join(lines[1:-1]).strip()
+                response_text = re.sub(
+                    r'^```(?:json)?\s*\n?', '', response_text
+                )
+                response_text = re.sub(r'\n?```.*$', '', response_text, flags=re.DOTALL)
+                response_text = response_text.strip()
 
             parsed = json.loads(response_text)
             return parsed
         except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
-            if attempt == 1:
-                logger.warning(
-                    "Failed to parse Ollama response after 2 attempts: %s", e
-                )
-                return {
-                    "is_valid": True,
-                    "hanzi_errors": "",
-                    "pinyin_errors": "",
-                    "translation_errors": "",
-                    "key_word": "",
-                    "notes": f"Validation error: {e}",
-                }
+            if attempt < 2:
+                logger.warning("Ollama request failed (attempt %d, retrying): %s", attempt + 1, e)
+                time.sleep(2 ** attempt)
+                continue
+            logger.warning(
+                "Failed to parse Ollama response after 3 attempts: %s", e
+            )
+            return {
+                "is_valid": True,
+                "hanzi_errors": "",
+                "pinyin_errors": "",
+                "translation_errors": "",
+                "key_word": "",
+                "notes": f"Validation error: {e}",
+            }
 
 
 def validate_grammar_point(gp: GrammarPoint) -> GrammarPoint:
@@ -103,7 +123,7 @@ def validate_grammar_point(gp: GrammarPoint) -> GrammarPoint:
         result = validate_sentence(sentence, gp.name)
         sentence.is_valid = result.get("is_valid", True)
         sentence.key_word = result.get("key_word") or None
-        time.sleep(0.5)
+        time.sleep(get("validator.sentence_delay", 0.5))
     return gp
 
 

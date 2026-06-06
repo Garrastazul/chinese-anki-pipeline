@@ -11,10 +11,6 @@ from src import scraper, validator, tts_generator, deck_builder
 from src.config import get
 from src.utils import get_audio_dir
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 REQUIRED_PACKAGES = ["requests", "bs4", "lxml", "edge_tts", "genanki", "jieba"]
@@ -27,12 +23,21 @@ def install_dependencies() -> None:
             [sys.executable, "-m", "pip", "install", "-e", "."],
             check=True, capture_output=True, text=True,
         )
-    except subprocess.CalledProcessError:
-        logger.info("Editable install failed, trying direct install...")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install"] + REQUIRED_PACKAGES,
-            check=True,
-        )
+    except subprocess.CalledProcessError as e:
+        logger.info("Editable install failed (exit code %d), trying direct install...", e.returncode)
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install"] + REQUIRED_PACKAGES,
+                check=True,
+                capture_output=True, text=True,
+            )
+        except subprocess.CalledProcessError as e2:
+            logger.error(
+                "Direct install also failed (exit code %d). "
+                "Try: pip install %s",
+                e2.returncode, " ".join(REQUIRED_PACKAGES),
+            )
+            sys.exit(1)
 
     logger.info("Verifying installations...")
     missing = []
@@ -52,10 +57,28 @@ def run_pipeline(
     skip_scrape: bool = False,
     skip_validate: bool = False,
     skip_tts: bool = False,
+    all_levels: bool = False,
 ) -> None:
+    levels: list[str] = get("levels", ["A1"])
     if level_name is None:
-        levels = get("levels", ["A1"])
         level_name = levels[0] if levels else "A1"
+
+    if all_levels:
+        for ln in levels:
+            _run_single_level(ln, skip_scrape, skip_validate, skip_tts)
+        return
+
+    _run_single_level(level_name, skip_scrape, skip_validate, skip_tts)
+
+
+def _run_single_level(
+    level_name: str,
+    skip_scrape: bool,
+    skip_validate: bool,
+    skip_tts: bool,
+) -> None:
+    level = None
+
     if not skip_scrape:
         logger.info("Step a) Scraping grammar points for %s...", level_name)
         level = scraper.scrape_level(level_name)
@@ -67,7 +90,8 @@ def run_pipeline(
         logger.info("Step b) Validating sentences for %s...", level_name)
         validator.ensure_ollama_running()
         validator.ensure_model()
-        level = scraper.load_level_data(level_name)
+        if level is None:
+            level = scraper.load_level_data(level_name)
         level = validator.validate_level(level)
         scraper.save_level_data(level)
         valid = sum(1 for gp in level.grammar_points for s in gp.sentences if s.is_valid)
@@ -77,7 +101,8 @@ def run_pipeline(
 
     if not skip_tts:
         logger.info("Step c) Generating TTS audio for %s...", level_name)
-        level = scraper.load_level_data(level_name)
+        if level is None:
+            level = scraper.load_level_data(level_name)
         level = tts_generator.generate_level_audio(level)
         scraper.save_level_data(level)
         audio_dir = get_audio_dir()
@@ -85,7 +110,8 @@ def run_pipeline(
         print(f"  Audio files: {audio_count}")
 
     logger.info("Step d) Building Anki deck for %s...", level_name)
-    level = scraper.load_level_data(level_name)
+    if level is None:
+        level = scraper.load_level_data(level_name)
     path = deck_builder.build_and_export(level)
     valid = sum(1 for gp in level.grammar_points for s in gp.sentences if s.is_valid)
     total = sum(len(gp.sentences) for gp in level.grammar_points)
@@ -96,12 +122,17 @@ def run_pipeline(
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Chinese Grammar Flashcard Pipeline")
     default_level = (get("levels", ["A1"]) or ["A1"])[0]
     parser.add_argument("--level", default=default_level, help=f"Grammar level (default: {default_level})")
     parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping step")
     parser.add_argument("--skip-validate", action="store_true", help="Skip validation step")
     parser.add_argument("--skip-tts", action="store_true", help="Skip TTS generation step")
+    parser.add_argument("--all-levels", action="store_true", help="Process all levels configured in config.json")
     parser.add_argument("--install", action="store_true", help="Install dependencies and exit")
     args = parser.parse_args()
 
@@ -114,6 +145,7 @@ def main() -> None:
         skip_scrape=args.skip_scrape,
         skip_validate=args.skip_validate,
         skip_tts=args.skip_tts,
+        all_levels=args.all_levels,
     )
 
 

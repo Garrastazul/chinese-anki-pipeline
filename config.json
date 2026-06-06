@@ -8,8 +8,7 @@
     "voice": "zh-CN-XiaoxiaoNeural"
   },
   "anki": {
-    "deck_name_template": "Chinese Grammar - {level}",
-    "card_types": ["hanzi_full", "en_hanzi", "cloze", "ordenar"]
+    "deck_name_template": "Chinese Grammar - {level}"
   },
   "scraper": {
     "base_url": "https://resources.allsetlearning.com/chinese/grammar",

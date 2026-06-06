@@ -14,7 +14,7 @@ from src.utils import get_audio_dir, get_output_dir, hash_string
 logger = logging.getLogger(__name__)
 
 _CSS = """
-body { font-size: 24px; text-align: center; font-family: 'Noto Sans SC', sans-serif; }
+body { font-size: 24px; text-align: center; font-family: 'Noto Sans SC', 'Noto Sans', 'Microsoft YaHei', 'SimHei', 'WenQuanYi Micro Hei', sans-serif; }
 .pinyin { color: #666; font-size: 18px; }
 .translation { color: #444; font-size: 16px; }
 """
@@ -88,7 +88,7 @@ def create_models() -> dict[str, genanki.Model]:
 
     m4 = genanki.Model(
         1607392322,
-        "Ordenar",
+        "Reorder",
         fields=[
             {"name": "Scrambled"},
             {"name": "Hanzi"},
@@ -101,46 +101,133 @@ def create_models() -> dict[str, genanki.Model]:
         templates=[
             {
                 "name": "Card 4",
-                "qfmt": "Ordena las palabras:<br><br>{{Scrambled}}",
+                "qfmt": "Arrange the words:<br><br>{{Scrambled}}",
                 "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br>{{AudioField}}<br><br>\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a>',
             }
         ],
         css=_CSS,
     )
 
-    return {"hanzi_full": m1, "en_hanzi": m2, "cloze": m3, "ordenar": m4}
+    return {"hanzi_full": m1, "en_hanzi": m2, "cloze": m3, "reorder": m4}
 
 
-def _get_keyword_pinyin(hanzi: str, pinyin_str: str, keyword: str) -> str:
+def _find_keyword_position(hanzi: str, keyword: str) -> int | None:
+    """Find keyword position aligned with jieba word boundaries."""
+    if not keyword:
+        return None
+    words = list(jieba.lcut(hanzi))
+    kw_len = len(keyword)
+    aligned = None
+    first = None
+    pos = 0
+    while True:
+        pos = hanzi.find(keyword, pos)
+        if pos == -1:
+            break
+        if first is None:
+            first = pos
+        cum = 0
+        for w in words:
+            w_stripped = w.strip()
+            if not w_stripped:
+                cum += len(w)
+                continue
+            w_start = cum
+            w_end = cum + len(w)
+            if pos >= w_start and pos + kw_len <= w_end and (
+                (pos == w_start and pos + kw_len == w_end) or kw_len == len(w_stripped)
+            ):
+                aligned = pos
+                break
+            cum = w_end
+        if aligned is not None:
+            return aligned
+        pos += 1
+    return first
+
+
+def _apply_cloze(hanzi: str, keyword: str) -> str:
+    pos = _find_keyword_position(hanzi, keyword)
+    if pos is not None:
+        return (
+            hanzi[:pos]
+            + f"{{{{c1::{keyword}}}}}"
+            + hanzi[pos + len(keyword):]
+        )
+    return hanzi
+
+
+def _get_keyword_token_range(hanzi: str, pinyin_str: str, keyword: str) -> tuple[int, int] | None:
     if not keyword or not pinyin_str:
-        return ""
-
+        return None
     tokens = pinyin_str.split()
+    kw_parts = [kp for kp in keyword.split() if kp]
+
+    def _find_range(parts):
+        for i in range(len(parts) - len(kw_parts) + 1):
+            if parts[i:i + len(kw_parts)] == kw_parts:
+                return (i, i + len(kw_parts))
+        return None
 
     hanzi_parts = hanzi.split()
     if len(hanzi_parts) == len(tokens):
-        for i, part in enumerate(hanzi_parts):
-            if keyword in part:
-                return tokens[i]
+        result = _find_range(hanzi_parts)
+        if result:
+            return result
 
-    words = list(jieba.cut(hanzi))
+    words = [w for w in jieba.cut(hanzi) if w.strip()]
     if len(words) == len(tokens):
-        for i, word in enumerate(words):
-            if keyword in word:
-                return tokens[i]
+        result = _find_range(words)
+        if result:
+            return result
 
-    start = hanzi.find(keyword)
-    if start == -1:
-        return ""
+    pos = _find_keyword_position(hanzi, keyword)
+    if pos is None:
+        return None
     non_space = [i for i, c in enumerate(hanzi) if c != " "]
     if not non_space:
+        return None
+    kw_start = sum(1 for i in non_space if i < pos)
+    kw_non_space_count = sum(1 for c in keyword if c != " ")
+    kw_end = kw_start + kw_non_space_count - 1
+
+    total_chars = len(non_space)
+    num_tokens = len(tokens)
+
+    base = total_chars // num_tokens
+    rem = total_chars % num_tokens
+    token_sizes = [base + (1 if i < rem else 0) for i in range(num_tokens)]
+
+    char_to_token: list[int] = []
+    for ti, size in enumerate(token_sizes):
+        char_to_token.extend([ti] * size)
+
+    first_ti = char_to_token[kw_start]
+    last_ti = char_to_token[kw_end]
+    return (first_ti, last_ti + 1)
+
+
+def _get_keyword_pinyin(hanzi: str, pinyin_str: str, keyword: str, _token_range: tuple[int, int] | None = None) -> str:
+    if _token_range is None:
+        _token_range = _get_keyword_token_range(hanzi, pinyin_str, keyword)
+    if _token_range is None:
         return ""
-    kw_start = sum(1 for i in non_space if i < start)
-    kw_end = kw_start + len(keyword) - 1
-    total = len(non_space)
-    first_ti = min(kw_start * len(tokens) // total, len(tokens) - 1)
-    last_ti = min(kw_end * len(tokens) // total, len(tokens) - 1)
-    return " ".join(tokens[first_ti : last_ti + 1])
+    tokens = pinyin_str.split()
+    return " ".join(tokens[_token_range[0]:_token_range[1]])
+
+
+def _apply_pinyin_cloze(hanzi: str, pinyin_str: str, keyword: str, _token_range: tuple[int, int] | None = None) -> str:
+    if _token_range is None:
+        _token_range = _get_keyword_token_range(hanzi, pinyin_str, keyword)
+    if _token_range is None:
+        return pinyin_str
+    tokens = pinyin_str.split()
+    kw_py = " ".join(tokens[_token_range[0]:_token_range[1]])
+    prefix = " ".join(tokens[:_token_range[0]])
+    suffix = " ".join(tokens[_token_range[1]:])
+    cloze = f"{{{{c1::{kw_py}}}}}"
+    parts = [p for p in (prefix, cloze, suffix) if p]
+    return " ".join(parts)
 
 
 def build_sentence_cards(
@@ -151,7 +238,7 @@ def build_sentence_cards(
         "hanzi_full": 0,
         "en_hanzi": 0,
         "cloze": 0,
-        "ordenar": 0,
+        "reorder": 0,
         "skipped_no_keyword": 0,
         "skipped_short": 0,
     }
@@ -204,17 +291,16 @@ def build_sentence_cards(
             # Cloze
             kw = sentence.key_word
             if kw:
-                hanzi_cloze = sentence.hanzi.replace(
-                    kw, f"{{{{c1::{kw}}}}}", 1
-                )
-                kw_py = _get_keyword_pinyin(
+                hanzi_cloze = _apply_cloze(sentence.hanzi, kw)
+                kw_tr = _get_keyword_token_range(
                     sentence.hanzi, sentence.pinyin, kw
                 )
-                pinyin_cloze = sentence.pinyin
-                if kw_py:
-                    pinyin_cloze = sentence.pinyin.replace(
-                        kw_py, f"{{{{c1::{kw_py}}}}}", 1
-                    )
+                kw_py = _get_keyword_pinyin(
+                    sentence.hanzi, sentence.pinyin, kw, kw_tr
+                )
+                pinyin_cloze = _apply_pinyin_cloze(
+                    sentence.hanzi, sentence.pinyin, kw, kw_tr
+                )
 
                 notes.append(
                     genanki.Note(
@@ -235,16 +321,16 @@ def build_sentence_cards(
             else:
                 stats["skipped_no_keyword"] += 1
 
-            # Ordenar
+            # Reorder
             words = jieba.lcut(sentence.hanzi)
             if len(words) >= 2:
                 sc_words = words.copy()
-                random.shuffle(sc_words)
+                random.Random(sentence.hanzi).shuffle(sc_words)
                 scrambled = " · ".join(sc_words)
 
                 notes.append(
                     genanki.Note(
-                        model=models["ordenar"],
+                        model=models["reorder"],
                         fields=[
                             scrambled,
                             sentence.hanzi,
@@ -254,10 +340,10 @@ def build_sentence_cards(
                             gp.full_url,
                             gp.name,
                         ],
-                        guid=hash_string(sentence.hanzi + "ordenar"),
+                        guid=hash_string(sentence.hanzi + "reorder"),
                     )
                 )
-                stats["ordenar"] += 1
+                stats["reorder"] += 1
             else:
                 stats["skipped_short"] += 1
 
@@ -278,17 +364,29 @@ def build_deck(
     return deck, models
 
 
+def _get_needed_audio(level: GrammarLevel) -> set[str]:
+    needed: set[str] = set()
+    for gp in level.grammar_points:
+        for s in gp.sentences:
+            if s.is_valid and s.audio_filename:
+                needed.add(s.audio_filename)
+    return needed
+
+
 def export_deck(
-    deck: genanki.Deck, models: dict, level_name: str
+    deck: genanki.Deck, models: dict, level: GrammarLevel
 ) -> Path:
     output_dir = get_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"chinese-grammar-{level_name.lower()}.apkg"
+    filename = f"chinese-grammar-{level.level.lower()}.apkg"
     filepath = output_dir / filename
 
     audio_dir = get_audio_dir()
+    needed = _get_needed_audio(level)
     media_files = (
-        [str(p) for p in audio_dir.glob("*.mp3")] if audio_dir.exists() else []
+        [str(p) for p in audio_dir.glob("*.mp3") if p.name in needed]
+        if audio_dir.exists() and needed
+        else []
     )
 
     package = genanki.Package(deck)
@@ -300,7 +398,7 @@ def export_deck(
 
 def build_and_export(level: GrammarLevel) -> Path:
     deck, models = build_deck(level)
-    return export_deck(deck, models, level.level)
+    return export_deck(deck, models, level)
 
 
 def main() -> None:
@@ -323,7 +421,7 @@ def main() -> None:
     deck, models = build_deck(level)
 
     logger.info("Exporting deck...")
-    path = export_deck(deck, models, level.level)
+    path = export_deck(deck, models, level)
 
     total_valid = sum(
         1

@@ -14,7 +14,9 @@ from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = get("scraper.base_url", "https://resources.allsetlearning.com/chinese/grammar")
+def _get_base_url() -> str:
+    return get("scraper.base_url", "https://resources.allsetlearning.com/chinese/grammar")
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -30,13 +32,13 @@ def fetch_page(url: str) -> str:
     return resp.text
 
 
-def parse_grammar_point_links(html: str, level: str) -> list[dict]:
+def parse_grammar_point_links(html: str, _level: str = "") -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     result: list[dict] = []
     for table in soup.select("table.wikitable"):
         rows = table.select("tr")
         for row in rows:
-            cells = row.select("td")
+            cells = row.find_all("td", recursive=False)
             if len(cells) < 3:
                 continue
             anchor = cells[0].find("a")
@@ -60,7 +62,7 @@ def parse_grammar_point_links(html: str, level: str) -> list[dict]:
 
 
 def fetch_grammar_point_page(url_slug: str) -> str:
-    url = f"{BASE_URL}/{url_slug}"
+    url = f"{_get_base_url()}/{url_slug}"
     resp = requests.get(url, headers=HEADERS, timeout=30, allow_redirects=True)
     resp.raise_for_status()
     return resp.text
@@ -70,8 +72,13 @@ def _extract_hanzi(cell: Tag) -> str:
     texts: list[str] = []
     for t in cell.find_all(string=True, recursive=True):
         parent = t.parent
-        if isinstance(parent, Tag) and parent.get("class") and "pinyin" in parent.get("class", []):
-            continue
+        if isinstance(parent, Tag):
+            ancestors = parent.parents
+            if any(
+                isinstance(a, Tag) and a.get("class") and "pinyin" in a.get("class", [])
+                for a in [parent] + list(ancestors)
+            ):
+                continue
         stripped = t.strip()
         if stripped:
             texts.append(stripped)
@@ -107,16 +114,20 @@ def parse_example_sentences(html: str) -> list[dict]:
 
 
 def scrape_level(level: str) -> GrammarLevel:
-    url = f"{BASE_URL}/{level}_grammar_points"
+    url = f"{_get_base_url()}/{level}_grammar_points"
     logger.info("Fetching %s grammar points index from %s", level, url)
-    html = fetch_page(url)
+    try:
+        html = fetch_page(url)
+    except requests.RequestException:
+        logger.error("Failed to fetch grammar points index for %s: %s", level, url)
+        return GrammarLevel(level=level, grammar_points=[])
     links = parse_grammar_point_links(html, level)
     logger.info("Found %d grammar point links for %s", len(links), level)
 
     grammar_points: list[GrammarPoint] = []
     for link in links:
         url_slug = link["url_slug"]
-        full_url = f"{BASE_URL}/{url_slug}"
+        full_url = f"{_get_base_url()}/{url_slug}"
         try:
             point_html = fetch_grammar_point_page(url_slug)
             raw_sentences = parse_example_sentences(point_html)
@@ -146,6 +157,7 @@ def scrape_level(level: str) -> GrammarLevel:
 
 def save_level_data(level: GrammarLevel) -> None:
     path: Path = get_data_processed_dir() / f"{level.level}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     def _to_dict(gp: GrammarPoint) -> dict:
         return {
@@ -178,27 +190,28 @@ def load_level_data(level_name: str) -> GrammarLevel:
     path: Path = get_data_processed_dir() / f"{level_name}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
 
+    gp_list = data.get("grammar_points", [])
     grammar_points = [
         GrammarPoint(
-            name=gp["name"],
-            level=gp["level"],
-            url_slug=gp["url_slug"],
-            full_url=gp["full_url"],
+            name=gp.get("name", "Unknown"),
+            level=gp.get("level", level_name),
+            url_slug=gp.get("url_slug", ""),
+            full_url=gp.get("full_url", ""),
             sentences=[
                 ExampleSentence(
-                    hanzi=s["hanzi"],
-                    pinyin=s["pinyin"],
-                    translation=s["translation"],
+                    hanzi=s.get("hanzi", ""),
+                    pinyin=s.get("pinyin", ""),
+                    translation=s.get("translation", ""),
                     is_valid=s.get("is_valid", True),
                     key_word=s.get("key_word"),
                     audio_filename=s.get("audio_filename"),
                 )
-                for s in gp["sentences"]
+                for s in gp.get("sentences", [])
             ],
         )
-        for gp in data["grammar_points"]
+        for gp in gp_list
     ]
-    return GrammarLevel(level=data["level"], grammar_points=grammar_points)
+    return GrammarLevel(level=data.get("level", level_name), grammar_points=grammar_points)
 
 
 def main() -> None:
