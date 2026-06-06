@@ -1,4 +1,3 @@
-import json
 import pytest
 from pathlib import Path
 from src.models import ExampleSentence, GrammarPoint, GrammarLevel
@@ -51,7 +50,4 @@ def sample_index_html() -> str:
 def sample_grammar_html() -> str:
     path = Path(__file__).parent / "fixtures" / "sample_grammar_page.html"
     return path.read_text(encoding="utf-8") if path.exists() else ""
-
-
-
 

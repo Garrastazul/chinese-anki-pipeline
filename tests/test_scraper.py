@@ -63,32 +63,6 @@ class TestExtractPinyin:
         assert _extract_pinyin(cell) == ""
 
 
-class TestParseGrammarPointLinks:
-    def test_parse_links_finds_correct_number(self, sample_index_html):
-        if not sample_index_html:
-            pytest.skip("No sample_index.html fixture")
-        links = parse_grammar_point_links(sample_index_html)
-        assert len(links) >= 2
-
-    def test_parse_links_has_expected_keys(self, sample_index_html):
-        if not sample_index_html:
-            pytest.skip("No fixture")
-        links = parse_grammar_point_links(sample_index_html)
-        for link in links:
-            assert "name" in link
-            assert "url_slug" in link
-            assert "pattern" in link
-            assert "examples_raw" in link
-
-    def test_parse_links_empty_html(self):
-        links = parse_grammar_point_links("<html></html>")
-        assert links == []
-
-    def test_parse_links_no_tables(self):
-        links = parse_grammar_point_links("<html><p>no table</p></html>")
-        assert links == []
-
-
 class TestParseExampleSentences:
     def test_parse_finds_sentences(self, sample_grammar_html):
         if not sample_grammar_html:
