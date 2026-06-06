@@ -1,0 +1,15 @@
+[project]
+name = "grammar-flashcards"
+version = "0.1.0"
+description = "Chinese grammar flashcard generator"
+requires-python = ">=3.10"
+
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "lxml",
+    "edge-tts",
+    "genanki",
+    "jieba",
+    "mutagen",
+]
