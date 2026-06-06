@@ -5,7 +5,7 @@ Generates Anki decks with Chinese grammar exercises from [Chinese Grammar Wiki](
 ## Requirements
 
 - Python 3.10+
-- [Ollama](https://ollama.com/) on WSL (with `qwen2.5:7b`)
+- [Ollama](https://ollama.com/) (native or on WSL, model configurable in `config.json`)
 - [Anki](https://apps.ankiweb.net/) (to import the `.apkg`)
 - Python dependencies: `requests`, `beautifulsoup4`, `lxml`, `edge-tts`, `genanki`, `jieba`
 
@@ -38,6 +38,7 @@ python src/main.py --level A1
 | `--skip-scrape` | Skip scraping (use existing cache) |
 | `--skip-validate` | Skip Ollama validation |
 | `--skip-tts` | Skip audio generation |
+| `--all-levels` | Process all levels defined in `config.json` |
 | `--install` | Install dependencies and exit |
 
 ## Card types
@@ -66,14 +67,15 @@ grammar-flashcards/
 │   ├── models.py           # Dataclasses (ExampleSentence, GrammarPoint, GrammarLevel)
 │   └── utils.py            # Utilities (paths, hash)
 ├── setup.ps1               # Setup script
+├── config.json             # Configuration (model, voice, levels, etc.)
 └── pyproject.toml          # Python dependencies
 ```
 
 ## Pipeline
 
 1. **Scrape** — Fetch grammar points and sentences from Chinese Grammar Wiki
-2. **Validate** — Ollama (`qwen2.5:7b`) validates each sentence and detects the keyword for cloze
-3. **TTS** — Generate audio with `edge-tts` (voice `zh-CN-XiaoxiaoNeural`)
+2. **Validate** — Ollama (model configurable in `config.json`) validates each sentence and detects the keyword for cloze
+3. **TTS** — Generate audio with `edge-tts` (voice configurable by gender in `config.json`: `voice_gender: female` = Xiaoxiao, `male` = Yunxi)
 4. **Build** — Assemble the `.apkg` deck with `genanki`
 
 The generated deck can be imported into Anki by double-clicking the `.apkg` file.
@@ -82,3 +84,4 @@ The generated deck can be imported into Anki by double-clicking the `.apkg` file
 
 - Note GUIDs use a hash of the hanzi → re-importing does not create duplicates
 - The wiki link appears on the answer side of each card
+- `config.local.json` overrides `config.json` for local settings without modifying the base file
