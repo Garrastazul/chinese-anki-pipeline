@@ -58,9 +58,9 @@ class TestGet:
         assert isinstance(v, str)
         assert len(v) > 0
 
-    def test_get_tts_voice(self):
-        v = get("tts.voice")
-        assert "Xiaoxiao" in v
+    def test_get_tts_voice_gender(self):
+        v = get("tts.voice_gender")
+        assert v in ("female", "male")
 
     def test_get_anki_deck_template(self):
         v = get("anki.deck_name_template")

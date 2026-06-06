@@ -28,9 +28,13 @@ if (-not $wslAvailable) {
     Write-Host "WSL not found. Make sure Ollama is running natively."
 } else {
     Write-Host "Starting Ollama in WSL..."
-    $ollamaJob = Start-Job -ScriptBlock { wsl ollama serve > $null 2>&1 }
+    $stderrLog = Join-Path -Path $env:TEMP -ChildPath "ollama_wsl_stderr.log"
+    $null = Start-Process -WindowStyle Hidden -FilePath wsl -ArgumentList "ollama","serve" -RedirectStandardError $stderrLog
     Start-Sleep -Seconds 2
-    $ollamaJob | Remove-Job -ErrorAction SilentlyContinue
+    if ((Get-Item -LiteralPath $stderrLog -ErrorAction SilentlyContinue).Length -gt 0) {
+        Write-Host "Ollama WSL stderr output (may be benign):" -ForegroundColor Yellow
+        Get-Content -LiteralPath $stderrLog | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
+    }
 
     Write-Host "Downloading model $Model ..."
     wsl ollama pull "$Model"

@@ -15,7 +15,17 @@ from src.utils import get_audio_dir, hash_string
 logger = logging.getLogger(__name__)
 
 
+_VOICE_MAP = {
+    "female": "zh-CN-XiaoxiaoNeural",
+    "male": "zh-CN-YunxiNeural",
+}
+
+
 def get_voice() -> str:
+    gender = get("tts.voice_gender", "female")
+    voice = _VOICE_MAP.get(gender)
+    if voice is not None:
+        return voice
     return get("tts.voice", "zh-CN-XiaoxiaoNeural")
 
 

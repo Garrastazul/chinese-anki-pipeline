@@ -32,7 +32,7 @@ def fetch_page(url: str) -> str:
     return resp.text
 
 
-def parse_grammar_point_links(html: str, _level: str = "") -> list[dict]:
+def parse_grammar_point_links(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     result: list[dict] = []
     for table in soup.select("table.wikitable"):
@@ -48,6 +48,8 @@ def parse_grammar_point_links(html: str, _level: str = "") -> list[dict]:
             if not name:
                 continue
             href = anchor.get("href", "")
+            if not href:
+                continue
             url_slug = href.rstrip("/").split("/")[-1]
             pattern = cells[1].get_text(strip=True)
             liju_span = cells[2].select_one("span.liju")
@@ -82,7 +84,7 @@ def _extract_hanzi(cell: Tag) -> str:
         stripped = t.strip()
         if stripped:
             texts.append(stripped)
-    return "".join(texts)
+    return " ".join(texts)
 
 
 def _extract_pinyin(cell: Tag) -> str:
@@ -93,6 +95,10 @@ def _extract_pinyin(cell: Tag) -> str:
 def parse_example_sentences(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     tables = soup.select("table.table-bordered, table.big-text")
+    if not tables:
+        tables = soup.select("table")
+        if tables:
+            logger.warning("Falling back to generic <table> selector (wiki CSS may have changed)")
     sentences: list[dict] = []
     for table in tables:
         rows = table.select("tr")
@@ -100,10 +106,19 @@ def parse_example_sentences(html: str) -> list[dict]:
             cells = row.select("td")
             if len(cells) < 2:
                 continue
-            hanzi = _extract_hanzi(cells[0])
+            hanzi_parts = []
+            pinyin_parts = []
+            for cell in cells[:-1]:
+                h = _extract_hanzi(cell)
+                if h:
+                    hanzi_parts.append(h)
+                p = _extract_pinyin(cell)
+                if p:
+                    pinyin_parts.append(p)
+            hanzi = " ".join(hanzi_parts)
             if not hanzi:
                 continue
-            pinyin = _extract_pinyin(cells[0])
+            pinyin = " ".join(pinyin_parts)
             translation = cells[-1].get_text(strip=True)
             sentences.append({
                 "hanzi": hanzi,
@@ -121,7 +136,7 @@ def scrape_level(level: str) -> GrammarLevel:
     except requests.RequestException:
         logger.error("Failed to fetch grammar points index for %s: %s", level, url)
         return GrammarLevel(level=level, grammar_points=[])
-    links = parse_grammar_point_links(html, level)
+    links = parse_grammar_point_links(html)
     logger.info("Found %d grammar point links for %s", len(links), level)
 
     grammar_points: list[GrammarPoint] = []
@@ -148,7 +163,7 @@ def scrape_level(level: str) -> GrammarLevel:
             )
             grammar_points.append(gp)
             logger.info("  %s: %d sentences", link["name"], len(sentences))
-        except Exception:
+        except (requests.RequestException, ValueError, TypeError, KeyError, AttributeError):
             logger.warning("Failed to fetch %s (%s), skipping", link["name"], full_url, exc_info=True)
         time.sleep(get("scraper.request_delay", 1.0))
 
@@ -173,6 +188,10 @@ def save_level_data(level: GrammarLevel) -> None:
                     "is_valid": s.is_valid,
                     "key_word": s.key_word,
                     "audio_filename": s.audio_filename,
+                    "hanzi_errors": s.hanzi_errors,
+                    "pinyin_errors": s.pinyin_errors,
+                    "translation_errors": s.translation_errors,
+                    "notes": s.notes,
                 }
                 for s in gp.sentences
             ],
@@ -205,6 +224,10 @@ def load_level_data(level_name: str) -> GrammarLevel:
                     is_valid=s.get("is_valid", True),
                     key_word=s.get("key_word"),
                     audio_filename=s.get("audio_filename"),
+                    hanzi_errors=s.get("hanzi_errors", ""),
+                    pinyin_errors=s.get("pinyin_errors", ""),
+                    translation_errors=s.get("translation_errors", ""),
+                    notes=s.get("notes", ""),
                 )
                 for s in gp.get("sentences", [])
             ],

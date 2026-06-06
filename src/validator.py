@@ -21,6 +21,14 @@ def _ollama_api() -> str:
 
 def ensure_ollama_running() -> None:
     try:
+        resp = requests.get(f"{_ollama_api()}/api/tags", timeout=5)
+        resp.raise_for_status()
+        logger.info("Ollama is already running at %s", _ollama_api())
+        return
+    except requests.RequestException:
+        logger.info("Ollama not reachable, attempting to start via WSL...")
+
+    try:
         subprocess.run(
             ["wsl", "bash", "-c", "ollama serve > /dev/null 2>&1 &"],
             capture_output=True,
@@ -43,8 +51,16 @@ def ensure_model(model_name: str | None = None) -> None:
         model_name = get("ollama.model", "qwen2.5:7b")
     try:
         subprocess.run(["wsl", "ollama", "pull", model_name], check=True, capture_output=True, text=True)
+        return
     except FileNotFoundError:
-        logger.warning("WSL not found, cannot auto-pull model %s", model_name)
+        logger.info("WSL not found, trying native ollama...")
+    except subprocess.CalledProcessError as e:
+        logger.warning("WSL pull failed (exit code %d): %s, trying native ollama...", e.returncode, e.stderr.strip() if e.stderr else "unknown error")
+
+    try:
+        subprocess.run(["ollama", "pull", model_name], check=True, capture_output=True, text=True)
+    except FileNotFoundError:
+        logger.warning("Native ollama not found either — please run 'ollama pull %s' manually", model_name)
     except subprocess.CalledProcessError as e:
         logger.warning("Failed to pull model %s (exit code %d): %s", model_name, e.returncode, e.stderr.strip() if e.stderr else "unknown error")
 
@@ -91,11 +107,11 @@ def validate_sentence(
             data = resp.json()
             response_text = (data.get("response") or "").strip()
 
-            if response_text.startswith("```"):
+            if re.match(r'^\s*```', response_text):
                 response_text = re.sub(
-                    r'^```(?:json)?\s*\n?', '', response_text
+                    r'^\s*```(?:json)?\s*\n?', '', response_text
                 )
-                response_text = re.sub(r'\n?```.*$', '', response_text, flags=re.DOTALL)
+                response_text = re.sub(r'\n?\s*```.*$', '', response_text, flags=re.DOTALL)
                 response_text = response_text.strip()
 
             parsed = json.loads(response_text)
@@ -109,7 +125,7 @@ def validate_sentence(
                 "Failed to parse Ollama response after 3 attempts: %s", e
             )
             return {
-                "is_valid": True,
+                "is_valid": False,
                 "hanzi_errors": "",
                 "pinyin_errors": "",
                 "translation_errors": "",
@@ -123,7 +139,12 @@ def validate_grammar_point(gp: GrammarPoint) -> GrammarPoint:
         result = validate_sentence(sentence, gp.name)
         sentence.is_valid = result.get("is_valid", True)
         sentence.key_word = result.get("key_word") or None
-        time.sleep(get("validator.sentence_delay", 0.5))
+        sentence.hanzi_errors = result.get("hanzi_errors", "")
+        sentence.pinyin_errors = result.get("pinyin_errors", "")
+        sentence.translation_errors = result.get("translation_errors", "")
+        sentence.notes = result.get("notes", "")
+        if not sentence.notes.startswith("Validation error"):
+            time.sleep(get("validator.sentence_delay", 0.5))
     return gp
 
 

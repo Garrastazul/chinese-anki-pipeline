@@ -1,13 +1,25 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathlib import Path
 from src.models import ExampleSentence, GrammarLevel, GrammarPoint
 from src.tts_generator import get_voice, generate_sentence_audio, generate_level_audio
 
 class TestGetVoice:
-    def test_returns_voice_string(self):
+    def test_default_is_female(self):
         voice = get_voice()
         assert isinstance(voice, str)
+        assert "Xiaoxiao" in voice
+
+    @patch("src.tts_generator.get")
+    def test_male_voice(self, mock_get):
+        mock_get.return_value = "male"
+        voice = get_voice()
+        assert "Yunxi" in voice
+
+    @patch("src.tts_generator.get")
+    def test_female_voice(self, mock_get):
+        mock_get.return_value = "female"
+        voice = get_voice()
         assert "Xiaoxiao" in voice
 
 class TestGenerateSentenceAudio:

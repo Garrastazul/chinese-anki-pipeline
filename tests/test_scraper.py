@@ -24,7 +24,7 @@ class TestExtractHanzi:
         soup = BeautifulSoup(html, "lxml")
         cell = soup.find("td")
         result = _extract_hanzi(cell)
-        assert result == "我 爱你"
+        assert result == "我 爱 你"
         assert "ài" not in result
 
     def test_extract_hanzi_no_pinyin(self):
@@ -67,13 +67,13 @@ class TestParseGrammarPointLinks:
     def test_parse_links_finds_correct_number(self, sample_index_html):
         if not sample_index_html:
             pytest.skip("No sample_index.html fixture")
-        links = parse_grammar_point_links(sample_index_html, "A1")
+        links = parse_grammar_point_links(sample_index_html)
         assert len(links) >= 2
 
     def test_parse_links_has_expected_keys(self, sample_index_html):
         if not sample_index_html:
             pytest.skip("No fixture")
-        links = parse_grammar_point_links(sample_index_html, "A1")
+        links = parse_grammar_point_links(sample_index_html)
         for link in links:
             assert "name" in link
             assert "url_slug" in link
@@ -81,11 +81,11 @@ class TestParseGrammarPointLinks:
             assert "examples_raw" in link
 
     def test_parse_links_empty_html(self):
-        links = parse_grammar_point_links("<html></html>", "A1")
+        links = parse_grammar_point_links("<html></html>")
         assert links == []
 
     def test_parse_links_no_tables(self):
-        links = parse_grammar_point_links("<html><p>no table</p></html>", "A1")
+        links = parse_grammar_point_links("<html><p>no table</p></html>")
         assert links == []
 
 
@@ -107,6 +107,97 @@ class TestParseExampleSentences:
 
     def test_parse_empty_html(self):
         assert parse_example_sentences("<html></html>") == []
+
+    def test_parse_multi_column_svo_table(self):
+        html = (
+            '<table class="table-bordered">'
+            '<tr><th>Subject</th><th>Verb</th><th>Object</th><th>Translation</th></tr>'
+            '<tr>'
+            '<td>我<span class="pinyin">Wǒ</span></td>'
+            '<td>爱<span class="pinyin">ài</span></td>'
+            '<td>你。<span class="pinyin">nǐ.</span></td>'
+            '<td>I love you.</td>'
+            '</tr>'
+            '</table>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert sentences[0]["hanzi"] == "我 爱 你。"
+        assert sentences[0]["pinyin"] == "Wǒ ài nǐ."
+        assert sentences[0]["translation"] == "I love you."
+
+    def test_parse_multi_column_does_not_include_translation_in_content(self):
+        html = (
+            '<table class="table-bordered">'
+            '<tr><td>他<span class="pinyin">Tā</span></td>'
+            '<td>是<span class="pinyin">shì</span></td>'
+            '<td>老师。<span class="pinyin">lǎoshī.</span></td>'
+            '<td>He is a teacher.</td></tr>'
+            '</table>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert "teacher" not in sentences[0]["hanzi"]
+        assert "He is" not in sentences[0]["pinyin"]
+
+    def test_parse_two_column_still_works(self):
+        html = (
+            '<table class="table-bordered">'
+            '<tr><td>你好<span class="pinyin">Nǐ hǎo</span></td><td>Hello</td></tr>'
+            '</table>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert sentences[0]["hanzi"] == "你好"
+        assert sentences[0]["pinyin"] == "Nǐ hǎo"
+        assert sentences[0]["translation"] == "Hello"
+
+
+class TestParseGrammarPointLinks:
+    def test_parse_links_finds_correct_number(self, sample_index_html):
+        if not sample_index_html:
+            pytest.skip("No sample_index.html fixture")
+        links = parse_grammar_point_links(sample_index_html)
+        assert len(links) >= 2
+
+    def test_parse_links_has_expected_keys(self, sample_index_html):
+        if not sample_index_html:
+            pytest.skip("No fixture")
+        links = parse_grammar_point_links(sample_index_html)
+        for link in links:
+            assert "name" in link
+            assert "url_slug" in link
+            assert "pattern" in link
+            assert "examples_raw" in link
+
+    def test_parse_links_empty_html(self):
+        links = parse_grammar_point_links("<html></html>")
+        assert links == []
+
+    def test_parse_links_no_tables(self):
+        links = parse_grammar_point_links("<html><p>no table</p></html>")
+        assert links == []
+
+    def test_parse_links_skips_row_without_href(self):
+        html = (
+            '<html><table class="wikitable">'
+            '<tr><td><a>no href</a></td><td>pattern</td><td>examples</td></tr>'
+            '<tr><td><a href="/chinese/grammar/ASG">valid</a></td>'
+            '<td>pattern</td><td>examples</td></tr>'
+            '</table></html>'
+        )
+        links = parse_grammar_point_links(html)
+        assert len(links) == 1
+        assert links[0]["name"] == "valid"
+
+    def test_parse_links_skips_row_with_empty_href(self):
+        html = (
+            '<html><table class="wikitable">'
+            '<tr><td><a href="">empty</a></td><td>pattern</td><td>examples</td></tr>'
+            '</table></html>'
+        )
+        links = parse_grammar_point_links(html)
+        assert links == []
 
 
 class TestFetchPage:
@@ -182,3 +273,32 @@ class TestScrapeLevel:
         assert len(level.grammar_points[0].sentences) == 1
         assert level.grammar_points[0].sentences[0].hanzi == "我"
         assert level.grammar_points[0].sentences[0].pinyin == "Wǒ"
+
+    @patch("src.scraper.fetch_page")
+    @patch("src.scraper.fetch_grammar_point_page")
+    @patch("src.scraper.time.sleep")
+    def test_scrape_level_multi_column_sentence(self, mock_sleep, mock_fetch_point, mock_fetch):
+        mock_fetch.return_value = (
+            '<html><table class="wikitable">'
+            '<tr><th>Grammar Point</th><th>Pattern</th><th>Examples</th></tr>'
+            '<tr><td><a href="/chinese/grammar/ASBASIC">Basic SVO</a></td>'
+            '<td>Subj. + Verb + Obj.</td>'
+            '<td><span class="liju">例句</span></td></tr>'
+            '</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><table class="table-bordered">'
+            '<tr><td>我<span class="pinyin">Wǒ</span></td>'
+            '<td>爱<span class="pinyin">ài</span></td>'
+            '<td>你。<span class="pinyin">nǐ.</span></td>'
+            '<td>I love you.</td></tr>'
+            '</table></html>'
+        )
+        level = scrape_level("A1")
+        assert isinstance(level, GrammarLevel)
+        assert len(level.grammar_points) == 1
+        assert len(level.grammar_points[0].sentences) == 1
+        assert level.grammar_points[0].sentences[0].hanzi == "我 爱 你。"
+        assert level.grammar_points[0].sentences[0].pinyin == "Wǒ ài nǐ."
+        assert level.grammar_points[0].sentences[0].translation == "I love you."
+

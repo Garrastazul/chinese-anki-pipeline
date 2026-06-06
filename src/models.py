@@ -11,6 +11,10 @@ class ExampleSentence:
     is_valid: bool = True
     key_word: str | None = None
     audio_filename: str | None = None
+    hanzi_errors: str = ""
+    pinyin_errors: str = ""
+    translation_errors: str = ""
+    notes: str = ""
 
     def __repr__(self) -> str:
         return f"ExampleSentence(hanzi={self.hanzi!r}, pinyin={self.pinyin!r}, translation={self.translation!r})"

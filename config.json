@@ -5,7 +5,7 @@
     "host": "http://localhost:11434"
   },
   "tts": {
-    "voice": "zh-CN-XiaoxiaoNeural"
+    "voice_gender": "female"
   },
   "anki": {
     "deck_name_template": "Chinese Grammar - {level}"
@@ -13,5 +13,8 @@
   "scraper": {
     "base_url": "https://resources.allsetlearning.com/chinese/grammar",
     "request_delay": 1.0
+  },
+  "validator": {
+    "sentence_delay": 0.5
   }
 }

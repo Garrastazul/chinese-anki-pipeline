@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathlib import Path
 import genanki
 from src.models import GrammarLevel, GrammarPoint, ExampleSentence
@@ -158,7 +158,6 @@ class TestBuildSentenceCards:
 
         notes = build_sentence_cards(level, models)
         assert len(notes) == 3
-
 
     def test_skips_cloze_when_no_keyword(self):
         s = ExampleSentence(hanzi="好 吗", pinyin="Hǎo ma", translation="OK?", is_valid=True, key_word=None)
