@@ -5,7 +5,7 @@
     "host": "http://localhost:11434"
   },
   "tts": {
-    "voice_gender": "female"
+    "voice_gender": "male"
   },
   "anki": {
     "deck_name_template": "Chinese Grammar - {level}"

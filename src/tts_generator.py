@@ -23,10 +23,7 @@ _VOICE_MAP = {
 
 def get_voice() -> str:
     gender = get("tts.voice_gender", "female")
-    voice = _VOICE_MAP.get(gender)
-    if voice is not None:
-        return voice
-    return get("tts.voice", "zh-CN-XiaoxiaoNeural")
+    return _VOICE_MAP.get(gender, "zh-CN-XiaoxiaoNeural")
 
 
 async def generate_audio(text: str, filename: str) -> Path:
