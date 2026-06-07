@@ -12,7 +12,7 @@ class TestLoadConfig:
     def test_load_config_has_expected_keys(self):
         cfg = load_config()
         assert "levels" in cfg
-        assert "ollama" in cfg
+        assert "groq" in cfg
         assert "tts" in cfg
         assert "anki" in cfg
         assert "scraper" in cfg
@@ -22,9 +22,9 @@ class TestLoadConfig:
         assert isinstance(cfg["levels"], list)
         assert "A1" in cfg["levels"]
 
-    def test_load_config_ollama_host(self):
+    def test_load_config_groq_model(self):
         cfg = load_config()
-        assert "localhost" in cfg["ollama"]["host"]
+        assert "model" in cfg["groq"]
 
 
 class TestGet:
@@ -33,7 +33,7 @@ class TestGet:
         assert isinstance(v, list)
 
     def test_get_nested_key(self):
-        v = get("ollama.model")
+        v = get("groq.model")
         assert v is not None
         assert isinstance(v, str)
 
@@ -53,8 +53,8 @@ class TestGet:
         v = get("completely.fake.key")
         assert v is None
 
-    def test_get_ollama_model(self):
-        v = get("ollama.model")
+    def test_get_groq_model(self):
+        v = get("groq.model")
         assert isinstance(v, str)
         assert len(v) > 0
 

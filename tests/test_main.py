@@ -21,16 +21,13 @@ class TestInstallDependencies:
 class TestRunPipeline:
     @patch("src.main.scraper.scrape_level")
     @patch("src.main.scraper.save_level_data")
-    @patch("src.main.validator.ensure_ollama_running")
-    @patch("src.main.validator.ensure_model")
     @patch("src.main.validator.validate_level")
     @patch("src.main.tts_generator.generate_level_audio")
     @patch("src.main.deck_builder.build_and_export")
     @patch("src.main.scraper.load_level_data")
     def test_pipeline_full(
         self, mock_load, mock_build, mock_tts, mock_validate_level,
-        mock_ensure_model, mock_ensure_ollama, mock_save, mock_scrape,
-        sample_level
+        mock_save, mock_scrape, sample_level
     ):
         mock_scrape.return_value = sample_level
         mock_load.return_value = sample_level
@@ -38,8 +35,6 @@ class TestRunPipeline:
         run_pipeline(level_name="A1", skip_scrape=False, skip_validate=False, skip_tts=False)
         mock_scrape.assert_called_once_with("A1")
         mock_save.assert_called()
-        mock_ensure_ollama.assert_called_once()
-        mock_ensure_model.assert_called_once()
         mock_tts.assert_called_once()
         mock_load.assert_not_called()
         mock_build.assert_called_once()

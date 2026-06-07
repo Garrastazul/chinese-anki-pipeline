@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import subprocess
 import time
 
 import requests
@@ -15,54 +14,20 @@ from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
-def _ollama_api() -> str:
-    return get("ollama.host", "http://localhost:11434")
+_GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
 
-def ensure_ollama_running() -> None:
-    try:
-        resp = requests.get(f"{_ollama_api()}/api/tags", timeout=5)
-        resp.raise_for_status()
-        logger.info("Ollama is already running at %s", _ollama_api())
-        return
-    except requests.RequestException:
-        logger.info("Ollama not reachable, attempting to start via WSL...")
-
-    try:
-        subprocess.run(
-            ["wsl", "bash", "-c", "ollama serve > /dev/null 2>&1 &"],
-            capture_output=True,
-        )
-    except (FileNotFoundError, PermissionError, OSError):
-        logger.warning("WSL not found or not accessible, assuming Ollama is running natively")
-    time.sleep(3)
-    try:
-        resp = requests.get(f"{_ollama_api()}/api/tags", timeout=5)
-        resp.raise_for_status()
-    except requests.RequestException as e:
+def _groq_headers() -> dict[str, str]:
+    api_key = get("groq.api_key")
+    if not api_key:
         raise RuntimeError(
-            "Ollama is not running or not accessible at "
-            f"{_ollama_api()}/api/tags"
-        ) from e
-
-
-def ensure_model(model_name: str | None = None) -> None:
-    if model_name is None:
-        model_name = get("ollama.model", "qwen2.5:7b")
-    try:
-        subprocess.run(["wsl", "ollama", "pull", model_name], check=True, capture_output=True, text=True)
-        return
-    except FileNotFoundError:
-        logger.info("WSL not found, trying native ollama...")
-    except subprocess.CalledProcessError as e:
-        logger.warning("WSL pull failed (exit code %d): %s, trying native ollama...", e.returncode, e.stderr.strip() if e.stderr else "unknown error")
-
-    try:
-        subprocess.run(["ollama", "pull", model_name], check=True, capture_output=True, text=True)
-    except FileNotFoundError:
-        logger.warning("Native ollama not found either — please run 'ollama pull %s' manually", model_name)
-    except subprocess.CalledProcessError as e:
-        logger.warning("Failed to pull model %s (exit code %d): %s", model_name, e.returncode, e.stderr.strip() if e.stderr else "unknown error")
+            "Groq API key not configured. "
+            "Set groq.api_key in config.local.json"
+        )
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
 
 def validate_sentence(
@@ -76,53 +41,57 @@ def validate_sentence(
         f"Pinyin: {sentence.pinyin}  "
         f"Translation: {sentence.translation}\n"
         "\n"
-        "Respond in the following strict JSON format without markdown:\n"
-        '{ "is_valid": true/false, "hanzi_errors": "", '
-        '"pinyin_errors": "", "translation_errors": "", '
-        '"key_word": "the keyword (in hanzi) that exemplifies this grammar point", '
-        '"notes": "" }\n'
+        "Respond in JSON with the following keys:\n"
+        '  "is_valid": true/false,\n'
+        '  "hanzi_errors": "",\n'
+        '  "pinyin_errors": "",\n'
+        '  "translation_errors": "",\n'
+        '  "key_word": "the keyword (in hanzi) that exemplifies this grammar point",\n'
+        '  "notes": ""\n'
         "\n"
         'key_word must be the specific word (e.g. "和", "了", "的") '
         "that illustrates the grammar point. If you cannot identify one, set it to \"\"."
     )
 
-    model = get("ollama.model", "qwen2.5:7b")
+    model = get("groq.model", "llama-3.3-70b-versatile")
     payload = {
         "model": model,
-        "prompt": prompt,
-        "stream": False,
-        "format": "json",
-        "options": {
-            "num_predict": 300,
-            "temperature": 0,
-        },
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a Mandarin Chinese teacher. Always respond in valid JSON.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0,
+        "max_tokens": 300,
+        "response_format": {"type": "json_object"},
     }
 
     for attempt in range(3):
         try:
             resp = requests.post(
-                f"{_ollama_api()}/api/generate", json=payload, timeout=60
+                _GROQ_ENDPOINT,
+                headers=_groq_headers(),
+                json=payload,
+                timeout=30,
             )
             resp.raise_for_status()
             data = resp.json()
-            response_text = (data.get("response") or "").strip()
-
-            if re.match(r'^\s*```', response_text):
-                response_text = re.sub(
-                    r'^\s*```(?:json)?\s*\n?', '', response_text
-                )
-                response_text = re.sub(r'\n?\s*```.*$', '', response_text, flags=re.DOTALL)
-                response_text = response_text.strip()
+            response_text = data["choices"][0]["message"]["content"].strip()
 
             parsed = json.loads(response_text)
             return parsed
         except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
             if attempt < 2:
-                logger.warning("Ollama request failed (attempt %d, retrying): %s", attempt + 1, e)
+                logger.warning(
+                    "Groq request failed (attempt %d, retrying): %s",
+                    attempt + 1, e,
+                )
                 time.sleep(2 ** attempt)
                 continue
             logger.warning(
-                "Failed to parse Ollama response after 3 attempts: %s", e
+                "Failed to parse Groq response after 3 attempts: %s", e
             )
             return {
                 "is_valid": False,
@@ -134,7 +103,7 @@ def validate_sentence(
             }
 
 
-def validate_grammar_point(gp: GrammarPoint) -> GrammarPoint:
+def validate_grammar_point(gp: GrammarPoint, counter: list[int] | None = None, total: int = 0) -> GrammarPoint:
     for sentence in gp.sentences:
         result = validate_sentence(sentence, gp.name)
         sentence.is_valid = result.get("is_valid", True)
@@ -143,14 +112,19 @@ def validate_grammar_point(gp: GrammarPoint) -> GrammarPoint:
         sentence.pinyin_errors = result.get("pinyin_errors", "")
         sentence.translation_errors = result.get("translation_errors", "")
         sentence.notes = result.get("notes", "")
+        if counter is not None:
+            counter[0] += 1
+            logger.info("Progress: %d/%d sentences validated", counter[0], total)
         if not sentence.notes.startswith("Validation error"):
             time.sleep(get("validator.sentence_delay", 0.5))
     return gp
 
 
 def validate_level(level: GrammarLevel) -> GrammarLevel:
+    total = sum(len(gp.sentences) for gp in level.grammar_points)
+    counter = [0]
     for gp in level.grammar_points:
-        validate_grammar_point(gp)
+        validate_grammar_point(gp, counter, total)
     return level
 
 
@@ -159,13 +133,6 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-
-    logger.info("Ensuring Ollama is running...")
-    ensure_ollama_running()
-
-    model = get("ollama.model", "qwen2.5:7b")
-    logger.info("Ensuring model %s is available...", model)
-    ensure_model(model)
 
     logger.info("Loading A1 data...")
     level = load_level_data("A1")

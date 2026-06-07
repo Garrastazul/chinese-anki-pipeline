@@ -126,6 +126,75 @@ class TestParseExampleSentences:
         assert sentences[0]["pinyin"] == "Nǐ hǎo"
         assert sentences[0]["translation"] == "Hello"
 
+    def test_parse_liju_single(self):
+        html = (
+            '<div class="liju"><ul><li>'
+            '我 <em>没有</em> 问题。'
+            '<span class="pinyin">Wǒ méiyǒu wèntí.</span>'
+            '<span class="trans">I don\'t have any questions.</span>'
+            '</li></ul></div>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert sentences[0]["hanzi"] == "我 没有 问题。"
+        assert sentences[0]["pinyin"] == "Wǒ méiyǒu wèntí."
+        assert sentences[0]["translation"] == "I don't have any questions."
+
+    def test_parse_liju_skips_li_without_translation(self):
+        html = (
+            '<div class="liju"><ul>'
+            '<li class="x">'
+            '我 <strong>不</strong> <em>有</em> 车。'
+            '<span class="expl">Never use 不 with 有!</span>'
+            '<span class="pinyin">Wǒ bù yǒu chē.</span>'
+            '</li>'
+            '<li class="o">'
+            '我 <strong>没</strong><em>有</em> 车。'
+            '<span class="expl">Always use 没 with 有.</span>'
+            '<span class="pinyin">Wǒ méiyǒu chē.</span>'
+            '<span class="trans">I don\'t have a car.</span>'
+            '</li>'
+            '</ul></div>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert sentences[0]["hanzi"] == "我 没 有 车。"
+
+    def test_parse_liju_multiple_items(self):
+        html = (
+            '<div class="liju"><ul>'
+            '<li>吃<span class="pinyin">Chī</span><span class="trans">Eat</span></li>'
+            '<li>喝<span class="pinyin">Hē</span><span class="trans">Drink</span></li>'
+            '</ul></div>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 2
+        assert sentences[0]["hanzi"] == "吃"
+        assert sentences[1]["hanzi"] == "喝"
+
+    def test_parse_liju_nested_inline_elements(self):
+        html = (
+            '<div class="liju"><ul><li>'
+            '他 <b>很</b> <em>高兴</em>。'
+            '<span class="pinyin">Tā hěn gāoxìng.</span>'
+            '<span class="trans">He is very happy.</span>'
+            '</li></ul></div>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert sentences[0]["hanzi"] == "他 很 高兴 。"
+
+    def test_parse_empty_liju_falls_back_to_tables(self):
+        html = (
+            '<div class="liju"></div>'
+            '<table class="table-bordered">'
+            '<tr><td>你好<span class="pinyin">Nǐ hǎo</span></td><td>Hello</td></tr>'
+            '</table>'
+        )
+        sentences = parse_example_sentences(html)
+        assert len(sentences) == 1
+        assert sentences[0]["hanzi"] == "你好"
+
 
 class TestParseGrammarPointLinks:
     def test_parse_links_finds_correct_number(self, sample_index_html):

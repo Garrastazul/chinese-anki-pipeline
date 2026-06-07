@@ -1,5 +1,3 @@
-import subprocess
-
 import pytest
 from unittest.mock import patch, MagicMock
 import json
@@ -7,68 +5,7 @@ import requests
 from src.models import ExampleSentence, GrammarPoint, GrammarLevel
 from src.validator import (
     validate_sentence, validate_grammar_point, validate_level,
-    ensure_ollama_running, ensure_model,
 )
-
-
-class TestEnsureOllamaRunning:
-    @patch("src.validator.subprocess.run")
-    @patch("src.validator.requests.get")
-    @patch("src.validator.time.sleep")
-    def test_ensure_ollama_running_success(self, mock_sleep, mock_get, mock_run):
-        mock_get.return_value.raise_for_status.return_value = None
-        ensure_ollama_running()
-        mock_run.assert_not_called()
-        mock_get.assert_called_once()
-
-    @patch("src.validator.subprocess.run")
-    @patch("src.validator.requests.get")
-    @patch("src.validator.time.sleep")
-    def test_ensure_ollama_running_failure(self, mock_sleep, mock_get, mock_run):
-        mock_get.side_effect = requests.ConnectionError("No connection")
-        with pytest.raises(RuntimeError, match="Ollama is not running"):
-            ensure_ollama_running()
-        mock_run.assert_called_once()
-
-
-class TestEnsureModel:
-    @patch("src.validator.subprocess.run")
-    def test_ensure_model_default(self, mock_run):
-        ensure_model()
-        assert mock_run.call_count == 1
-        args = mock_run.call_args[0][0]
-        assert "wsl" in args
-        assert "pull" in args
-
-    @patch("src.validator.subprocess.run")
-    def test_ensure_model_custom_name(self, mock_run):
-        ensure_model("llama3:8b")
-        args = mock_run.call_args[0][0]
-        assert "llama3:8b" in args
-
-    @patch("src.validator.subprocess.run")
-    def test_ensure_model_file_not_found(self, mock_run):
-        mock_run.side_effect = FileNotFoundError("wsl not found")
-        ensure_model("test-model")
-        assert mock_run.call_count == 2
-
-    @patch("src.validator.subprocess.run")
-    def test_ensure_model_called_process_error(self, mock_run):
-        mock_run.side_effect = subprocess.CalledProcessError(1, "wsl ollama pull test-model", stderr="model not found")
-        ensure_model("test-model")
-        assert mock_run.call_count == 2
-
-    @patch("src.validator.subprocess.run")
-    def test_ensure_model_falls_back_to_native(self, mock_run):
-        mock_run.side_effect = [
-            FileNotFoundError("wsl not found"),
-            MagicMock(returncode=0),
-        ]
-        ensure_model("test-model")
-        assert mock_run.call_count == 2
-        native_args = mock_run.call_args[0][0]
-        assert native_args[0] == "ollama"
-        assert native_args[1] == "pull"
 
 
 class TestValidateSentence:
@@ -76,14 +13,14 @@ class TestValidateSentence:
     def test_valid_sentence(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": True,
                 "hanzi_errors": "",
                 "pinyin_errors": "",
                 "translation_errors": "",
                 "key_word": "和",
                 "notes": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -97,14 +34,14 @@ class TestValidateSentence:
         s = ExampleSentence(hanzi="错句", pinyin="Cuò jù", translation="Wrong")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "hanzi_errors": "Typo",
                 "pinyin_errors": "",
                 "translation_errors": "",
                 "key_word": "",
                 "notes": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -113,22 +50,11 @@ class TestValidateSentence:
         assert result["is_valid"] is False
 
     @patch("src.validator.requests.post")
-    def test_ollama_returns_markdown_json(self, mock_post, sample_sentence):
+    def test_groq_returns_garbage_fallback(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": "```json\n{\"is_valid\": true, \"key_word\": \"和\"}\n```"
+            "choices": [{"message": {"content": "not json at all"}}]
         }
-        mock_resp.raise_for_status.return_value = None
-        mock_post.return_value = mock_resp
-
-        result = validate_sentence(sample_sentence, "Test")
-        assert result["is_valid"] is True
-        assert result["key_word"] == "和"
-
-    @patch("src.validator.requests.post")
-    def test_ollama_returns_garbage_fallback(self, mock_post, sample_sentence):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {"response": "not json at all"}
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
 
@@ -137,9 +63,11 @@ class TestValidateSentence:
         assert "Validation error" in result.get("notes", "")
 
     @patch("src.validator.requests.post")
-    def test_ollama_timeout_retry(self, mock_post, sample_sentence):
+    def test_groq_timeout_retry(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"response": json.dumps({"is_valid": True, "key_word": "key"})}
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"is_valid": True, "key_word": "key"})}}]
+        }
         mock_resp.raise_for_status.return_value = None
         mock_post.side_effect = [requests.Timeout("timeout"), mock_resp]
 
@@ -147,48 +75,11 @@ class TestValidateSentence:
         assert result["is_valid"] is True
 
     @patch("src.validator.requests.post")
-    def test_markdown_fence_no_closing(self, mock_post, sample_sentence):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "response": '```json\n{"is_valid": true, "key_word": "和"}'
-        }
-        mock_resp.raise_for_status.return_value = None
-        mock_post.return_value = mock_resp
-
-        result = validate_sentence(sample_sentence, "Test")
-        assert result["is_valid"] is True
-        assert result["key_word"] == "和"
-
-    @patch("src.validator.requests.post")
-    def test_markdown_fence_inline_closing(self, mock_post, sample_sentence):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "response": '```json\n{"is_valid": true, "key_word": "和"}```'
-        }
-        mock_resp.raise_for_status.return_value = None
-        mock_post.return_value = mock_resp
-
-        result = validate_sentence(sample_sentence, "Test")
-        assert result["is_valid"] is True
-        assert result["key_word"] == "和"
-
-    @patch("src.validator.requests.post")
-    def test_markdown_fence_trailing_text(self, mock_post, sample_sentence):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "response": '```json\n{"is_valid": true, "key_word": "和"}\n``` some trailing text'
-        }
-        mock_resp.raise_for_status.return_value = None
-        mock_post.return_value = mock_resp
-
-        result = validate_sentence(sample_sentence, "Test")
-        assert result["is_valid"] is True
-        assert result["key_word"] == "和"
-
-    @patch("src.validator.requests.post")
     def test_retry_three_attempts(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"response": '{"is_valid": true, "key_word": "ok"}'}
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": '{"is_valid": true, "key_word": "ok"}'}}]
+        }
         mock_resp.raise_for_status.return_value = None
         mock_post.side_effect = [
             requests.Timeout("timeout"),
@@ -202,49 +93,41 @@ class TestValidateSentence:
         assert mock_post.call_count == 3
 
     @patch("src.validator.requests.post")
-    def test_markdown_fence_with_leading_whitespace(self, mock_post, sample_sentence):
-        mock_resp = MagicMock()
-        mock_resp.json.return_value = {
-            "response": '  \n  ```json\n{"is_valid": true, "key_word": "和"}\n  ```'
-        }
-        mock_resp.raise_for_status.return_value = None
-        mock_post.return_value = mock_resp
-
-        result = validate_sentence(sample_sentence, "Test")
-        assert result["is_valid"] is True
-        assert result["key_word"] == "和"
-
-    @patch("src.validator.requests.post")
     def test_prompt_contains_all_fields(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({"is_valid": True, "key_word": ""})
+            "choices": [{"message": {"content": json.dumps({"is_valid": True, "key_word": ""})}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
 
         validate_sentence(sample_sentence, "Test Grammar Point")
 
-        sent_prompt = mock_post.call_args[1]["json"]["prompt"]
-        assert "Hanzi: 我 爱 你。" in sent_prompt
-        assert "Pinyin: Wǒ ài nǐ." in sent_prompt
-        assert "Translation: I love you." in sent_prompt
-        assert "Grammar point: Test Grammar Point" in sent_prompt
-        assert "JSON" in sent_prompt
-        assert "translation_errors" in sent_prompt
+        sent_messages = mock_post.call_args[1]["json"]["messages"]
+        user_content = sent_messages[1]["content"]
+        assert "Hanzi: 我 爱 你。" in user_content
+        assert "Pinyin: Wǒ ài nǐ." in user_content
+        assert "Translation: I love you." in user_content
+        assert "Grammar point: Test Grammar Point" in user_content
+        assert "JSON" in user_content
+        assert "translation_errors" in user_content
 
     @patch("src.validator.requests.post")
     def test_prompt_uses_correct_model_and_format(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
-        mock_resp.json.return_value = {"response": '{"is_valid": true}'}
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": '{"is_valid": true}'}}]
+        }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
 
         validate_sentence(sample_sentence, "Test")
         payload = mock_post.call_args[1]["json"]
-        assert payload["format"] == "json"
-        assert payload["stream"] is False
-        assert payload["options"]["temperature"] == 0
+        assert payload["model"] == "llama-3.3-70b-versatile"
+        assert payload["response_format"] == {"type": "json_object"}
+        assert payload["temperature"] == 0
+        assert payload["messages"][0]["role"] == "system"
+        assert payload["messages"][1]["role"] == "user"
 
 
 class TestValidateGrammarPoint:
@@ -263,14 +146,14 @@ class TestTranslationErrorDetection:
         s = ExampleSentence("我 爱 你。", "Wǒ ài nǐ.", "I hate you.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "hanzi_errors": "",
                 "pinyin_errors": "",
                 "translation_errors": "Translation says 'hate' but hanzi means 'love' (爱)",
                 "key_word": "",
                 "notes": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -284,11 +167,11 @@ class TestTranslationErrorDetection:
         s = ExampleSentence("我 不 去。", "Wǒ bù qù.", "I am going.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "translation_errors": "Hanzi has negation 不 (not), but translation is positive",
                 "notes": "Negation mismatch",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -301,10 +184,10 @@ class TestTranslationErrorDetection:
         s = ExampleSentence("他 爱 我。", "Tā ài wǒ.", "I love him.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "translation_errors": "Subject/object reversed: 他 (he) is subject, 我 (I) is object",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -317,12 +200,12 @@ class TestTranslationErrorDetection:
         s = ExampleSentence("他 是 老师。", "Tā shì lǎoshī.", "He is a teacher.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": True,
                 "hanzi_errors": "",
                 "pinyin_errors": "",
                 "translation_errors": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -338,11 +221,11 @@ class TestPinyinErrorDetection:
         s = ExampleSentence("妈妈", "Māmā", "Mom")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "pinyin_errors": "Second character should be neutral tone, not first tone",
                 "translation_errors": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -356,12 +239,12 @@ class TestPinyinErrorDetection:
         s = ExampleSentence("我 吃 苹果。", "Wǒ hē píngguǒ.", "I eat apples.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "pinyin_errors": "吃 should be chī, not hē (喝)",
                 "hanzi_errors": "",
                 "translation_errors": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -377,12 +260,12 @@ class TestMultiErrorDetection:
         s = ExampleSentence("我 很 好。", "Wǒ hěn hǎo.", "I am bad.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "pinyin_errors": "",
                 "translation_errors": "好 means 'good', not 'bad'",
                 "notes": "Complete meaning mismatch",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -396,13 +279,13 @@ class TestMultiErrorDetection:
         s = ExampleSentence("我 好。", "Wǒ hǎo.", "I bad.")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "hanzi_errors": "Sentence seems incomplete",
                 "pinyin_errors": "Missing tone on hǎo",
                 "translation_errors": "好 is 'good' not 'bad'",
                 "notes": "Multiple issues",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -421,10 +304,10 @@ class TestValidationEdgeCases:
         s = ExampleSentence("你好", "Nǐ hǎo", "")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "translation_errors": "Translation is empty",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -433,16 +316,16 @@ class TestValidationEdgeCases:
         assert result["is_valid"] is False
 
     @patch("src.validator.requests.post")
-    def test_ollama_says_valid_but_empty_keyword(self, mock_post, sample_sentence):
+    def test_groq_says_valid_but_empty_keyword(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": True,
                 "key_word": "",
                 "hanzi_errors": "",
                 "pinyin_errors": "",
                 "translation_errors": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -452,16 +335,16 @@ class TestValidationEdgeCases:
         assert result["key_word"] == ""
 
     @patch("src.validator.requests.post")
-    def test_ollama_says_invalid_but_no_details(self, mock_post):
+    def test_groq_says_invalid_but_no_details(self, mock_post):
         s = ExampleSentence("测试", "Cèshì", "Test")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": False,
                 "hanzi_errors": "",
                 "pinyin_errors": "",
                 "translation_errors": "",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -474,11 +357,11 @@ class TestValidationEdgeCases:
         s = ExampleSentence("你好。", "Nǐ hǎo.", "Hello")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({
+            "choices": [{"message": {"content": json.dumps({
                 "is_valid": True,
                 "translation_errors": "",
                 "notes": "Minor: Chinese period vs no punctuation in English, but acceptable",
-            })
+            })}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -495,7 +378,7 @@ class TestValidationEdgeCases:
         )
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({"is_valid": True, "key_word": "了"})
+            "choices": [{"message": {"content": json.dumps({"is_valid": True, "key_word": "了"})}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
@@ -512,12 +395,11 @@ class TestValidationEdgeCases:
         )
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
-            "response": json.dumps({"is_valid": True})
+            "choices": [{"message": {"content": json.dumps({"is_valid": True})}}]
         }
         mock_resp.raise_for_status.return_value = None
         mock_post.return_value = mock_resp
 
-        # No debería romperse por las comillas dobles en ningún campo
         result = validate_sentence(s, "Quoting speech")
         assert result["is_valid"] is True
 

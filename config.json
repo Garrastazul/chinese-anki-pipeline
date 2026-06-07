@@ -1,8 +1,8 @@
 {
   "levels": ["A1"],
-  "ollama": {
-    "model": "qwen2.5:7b",
-    "host": "http://localhost:11434"
+  "groq": {
+    "model": "llama-3.3-70b-versatile",
+    "api_key": ""
   },
   "tts": {
     "voice_gender": "male"
@@ -15,6 +15,6 @@
     "request_delay": 1.0
   },
   "validator": {
-    "sentence_delay": 0.5
+    "sentence_delay": 0.0
   }
 }

@@ -94,12 +94,45 @@ def _extract_pinyin(cell: Tag) -> str:
 
 def parse_example_sentences(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
+
+    liju_divs = soup.select("div.liju")
+    if liju_divs:
+        sentences: list[dict] = []
+        for div in liju_divs:
+            for li in div.select("li"):
+                hanzi_parts = []
+                for child in li.children:
+                    if isinstance(child, str):
+                        t = child.strip()
+                        if t:
+                            hanzi_parts.append(t)
+                    elif child.name != "span":
+                        t = child.get_text(strip=True)
+                        if t:
+                            hanzi_parts.append(t)
+                hanzi = " ".join(hanzi_parts)
+                if not hanzi:
+                    continue
+                pinyin_span = li.select_one("span.pinyin")
+                pinyin = pinyin_span.get_text(strip=True) if pinyin_span else ""
+                trans_span = li.select_one("span.trans")
+                translation = trans_span.get_text(strip=True) if trans_span else ""
+                if not translation:
+                    continue
+                sentences.append({
+                    "hanzi": hanzi,
+                    "pinyin": pinyin,
+                    "translation": translation,
+                })
+        if sentences:
+            return sentences
+
     tables = soup.select("table.table-bordered, table.big-text")
     if not tables:
         tables = soup.select("table")
         if tables:
             logger.warning("Falling back to generic <table> selector (wiki CSS may have changed)")
-    sentences: list[dict] = []
+    sentences = []
     for table in tables:
         rows = table.select("tr")
         for row in rows:

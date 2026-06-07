@@ -88,8 +88,6 @@ def _run_single_level(
 
     if not skip_validate:
         logger.info("Step b) Validating sentences for %s...", level_name)
-        validator.ensure_ollama_running()
-        validator.ensure_model()
         if level is None:
             level = scraper.load_level_data(level_name)
         level = validator.validate_level(level)
