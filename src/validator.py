@@ -6,6 +6,7 @@ import re
 import time
 
 import requests
+from tqdm import tqdm
 
 from src.config import get
 from src.models import ExampleSentence, GrammarLevel, GrammarPoint
@@ -13,21 +14,6 @@ from src.scraper import load_level_data, save_level_data
 from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
-
-_GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-
-
-def _groq_headers() -> dict[str, str]:
-    api_key = get("groq.api_key")
-    if not api_key:
-        raise RuntimeError(
-            "Groq API key not configured. "
-            "Set groq.api_key in config.local.json"
-        )
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
 
 
 def validate_sentence(
@@ -39,12 +25,13 @@ def validate_sentence(
         "Return JSON:\n"
         '- "is_valid": false if hanzi wrong/missing, pinyin mismatch, or translation empty/wrong\n'
         '- "hanzi_errors", "pinyin_errors", "translation_errors": "" or description\n'
-        '- "key_word": keyword in hanzi (e.g. "了") or ""\n'
+        '- "key_word": keyword in hanzi (e.g. "\u4e86") or ""\n'
         '- "notes": "" or brief explanation\n\n'
         "Rules: pinyin must match hanzi exactly. Empty translation = error."
     ) % (grammar_point_name, sentence.hanzi, sentence.pinyin, sentence.translation)
 
-    model = get("groq.model", "llama-3.3-70b-versatile")
+    model = get("ollama.model", "qwen2.5:7b")
+    endpoint = get("ollama.endpoint", "http://localhost:11434/v1/chat/completions")
     payload = {
         "model": model,
         "messages": [
@@ -61,60 +48,41 @@ def validate_sentence(
 
     for attempt in range(3):
         try:
-            resp = requests.post(
-                _GROQ_ENDPOINT,
-                headers=_groq_headers(),
-                json=payload,
-                timeout=30,
-            )
+            resp = requests.post(endpoint, json=payload, timeout=120)
             resp.raise_for_status()
             try:
                 data = resp.json()
             except json.JSONDecodeError:
-                logger.warning("Groq returned non-JSON response: %.200s", resp.text)
+                logger.warning(
+                    "Ollama returned non-JSON response (attempt %d): %.200s",
+                    attempt + 1, resp.text,
+                )
                 time.sleep(2 ** attempt)
                 continue
             try:
                 response_text = data["choices"][0]["message"]["content"].strip()
             except (KeyError, IndexError, TypeError):
-                logger.warning("Unexpected Groq response structure: %.200s", resp.text)
+                logger.warning(
+                    "Unexpected Ollama response structure (attempt %d): %.200s",
+                    attempt + 1, resp.text,
+                )
                 time.sleep(2 ** attempt)
                 continue
             try:
                 parsed = json.loads(response_text)
             except json.JSONDecodeError as e:
                 logger.warning(
-                    "Groq returned invalid JSON in content (attempt %d): %.200s",
+                    "Ollama returned invalid JSON in content (attempt %d): %.200s",
                     attempt + 1, response_text,
                 )
                 time.sleep(2 ** attempt)
                 continue
             return parsed
-        except requests.HTTPError as e:
-            status = e.response.status_code
-            try:
-                body_preview = e.response.text[:500]
-            except Exception:
-                body_preview = "<unreadable>"
-            logger.warning(
-                "Groq request failed (attempt %d): status=%d, body=%.200s",
-                attempt + 1, status, body_preview,
-            )
-            if status == 429:
-                retry_after = int(e.response.headers.get("retry-after", 4))
-                logger.warning(
-                    "Rate limited, waiting %ds...", retry_after,
-                )
-                time.sleep(retry_after)
-                continue
-            if attempt < 2:
-                logger.warning(
-                    "Retrying after %ds...", 2 ** attempt,
-                )
-                time.sleep(2 ** attempt)
-                continue
-            logger.warning(
-                "Failed after 3 attempts (status %d): %s", status, body_preview,
+        except requests.ConnectionError:
+            logger.error(
+                "Ollama not reachable at %s. Is it running? "
+                "Start with: wsl -d Ubuntu -u root -- ollama serve",
+                endpoint,
             )
             return {
                 "is_valid": False,
@@ -122,11 +90,47 @@ def validate_sentence(
                 "pinyin_errors": "",
                 "translation_errors": "",
                 "key_word": "",
-                "notes": f"Validation error (HTTP {status}): {body_preview[:200]}",
+                "notes": f"Ollama connection error (attempt {attempt + 1})",
+            }
+        except requests.Timeout:
+            logger.warning(
+                "Ollama request timed out (attempt %d), retrying...", attempt + 1,
+            )
+            time.sleep(2 ** attempt)
+            continue
+        except requests.HTTPError as e:
+            status = e.response.status_code
+            try:
+                body_preview = e.response.text[:500]
+            except Exception:
+                body_preview = "<unreadable>"
+            logger.warning(
+                "Ollama request failed (attempt %d): status=%d, body=%.200s",
+                attempt + 1, status, body_preview,
+            )
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                continue
+            return {
+                "is_valid": False,
+                "hanzi_errors": "",
+                "pinyin_errors": "",
+                "translation_errors": "",
+                "key_word": "",
+                "notes": f"Ollama error (HTTP {status}): {body_preview[:200]}",
             }
 
+    return {
+        "is_valid": False,
+        "hanzi_errors": "",
+        "pinyin_errors": "",
+        "translation_errors": "",
+        "key_word": "",
+        "notes": "Validation error: all attempts failed",
+    }
 
-def validate_grammar_point(gp: GrammarPoint, counter: list[int] | None = None, total: int = 0) -> GrammarPoint:
+
+def validate_grammar_point(gp: GrammarPoint, pbar: tqdm | None = None) -> GrammarPoint:
     for sentence in gp.sentences:
         result = validate_sentence(sentence, gp.name)
         sentence.is_valid = result.get("is_valid", True)
@@ -135,9 +139,9 @@ def validate_grammar_point(gp: GrammarPoint, counter: list[int] | None = None, t
         sentence.pinyin_errors = result.get("pinyin_errors", "")
         sentence.translation_errors = result.get("translation_errors", "")
         sentence.notes = result.get("notes", "")
-        if counter is not None:
-            counter[0] += 1
-            logger.info("Progress: %d/%d sentences validated", counter[0], total)
+        if pbar is not None:
+            pbar.update(1)
+            pbar.set_postfix_str(gp.name[:40], refresh=False)
         if not sentence.notes.startswith("Validation error"):
             time.sleep(get("validator.sentence_delay", 0.5))
     return gp
@@ -145,9 +149,9 @@ def validate_grammar_point(gp: GrammarPoint, counter: list[int] | None = None, t
 
 def validate_level(level: GrammarLevel) -> GrammarLevel:
     total = sum(len(gp.sentences) for gp in level.grammar_points)
-    counter = [0]
-    for gp in level.grammar_points:
-        validate_grammar_point(gp, counter, total)
+    with tqdm(total=total, desc="Validating", unit="sent", ncols=100) as pbar:
+        for gp in level.grammar_points:
+            validate_grammar_point(gp, pbar)
     return level
 
 

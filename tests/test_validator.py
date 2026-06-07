@@ -3,9 +3,14 @@ from unittest.mock import patch, MagicMock
 import json
 import requests
 from src.models import ExampleSentence, GrammarPoint, GrammarLevel
+from src.config import get
 from src.validator import (
     validate_sentence, validate_grammar_point, validate_level,
 )
+
+
+def _expected_model() -> str:
+    return get("ollama.model", "qwen2.5:7b")
 
 
 class TestValidateSentence:
@@ -50,7 +55,7 @@ class TestValidateSentence:
         assert result["is_valid"] is False
 
     @patch("src.validator.requests.post")
-    def test_groq_returns_garbage_fallback(self, mock_post, sample_sentence):
+    def test_returns_garbage_fallback(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "choices": [{"message": {"content": "not json at all"}}]
@@ -63,7 +68,7 @@ class TestValidateSentence:
         assert "Validation error" in result.get("notes", "")
 
     @patch("src.validator.requests.post")
-    def test_groq_timeout_retry(self, mock_post, sample_sentence):
+    def test_timeout_retry(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "choices": [{"message": {"content": json.dumps({"is_valid": True, "key_word": "key"})}}]
@@ -107,8 +112,8 @@ class TestValidateSentence:
         user_content = sent_messages[1]["content"]
         assert "Hanzi: 我 爱 你。" in user_content
         assert "Pinyin: Wǒ ài nǐ." in user_content
-        assert "Translation: I love you." in user_content
-        assert "Grammar point: Test Grammar Point" in user_content
+        assert "EN: I love you." in user_content
+        assert "Validate sentence for 'Test Grammar Point'" in user_content
         assert "JSON" in user_content
         assert "translation_errors" in user_content
 
@@ -123,7 +128,7 @@ class TestValidateSentence:
 
         validate_sentence(sample_sentence, "Test")
         payload = mock_post.call_args[1]["json"]
-        assert payload["model"] == "llama-3.3-70b-versatile"
+        assert payload["model"] == _expected_model()
         assert payload["response_format"] == {"type": "json_object"}
         assert payload["temperature"] == 0
         assert payload["messages"][0]["role"] == "system"
@@ -316,7 +321,7 @@ class TestValidationEdgeCases:
         assert result["is_valid"] is False
 
     @patch("src.validator.requests.post")
-    def test_groq_says_valid_but_empty_keyword(self, mock_post, sample_sentence):
+    def test_says_valid_but_empty_keyword(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "choices": [{"message": {"content": json.dumps({
@@ -335,7 +340,7 @@ class TestValidationEdgeCases:
         assert result["key_word"] == ""
 
     @patch("src.validator.requests.post")
-    def test_groq_says_invalid_but_no_details(self, mock_post):
+    def test_says_invalid_but_no_details(self, mock_post):
         s = ExampleSentence("测试", "Cèshì", "Test")
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
