@@ -278,6 +278,17 @@ class TestSaveLoadRoundtrip:
         assert len(loaded.grammar_points[0].sentences) == len(sample_level.grammar_points[0].sentences)
         assert loaded.grammar_points[0].sentences[0].hanzi == sample_level.grammar_points[0].sentences[0].hanzi
 
+    def test_save_and_load_preserves_pattern(self, tmp_path):
+        s = ExampleSentence(hanzi="好", pinyin="hǎo", translation="good")
+        gp = GrammarPoint(name="Test", level="A1", url_slug="test", full_url="x", pattern="Subj. + Adj.", sentences=[s])
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+
+        with patch("src.scraper.get_data_processed_dir", return_value=tmp_path):
+            save_level_data(level)
+            loaded = load_level_data("A1")
+
+        assert loaded.grammar_points[0].pattern == "Subj. + Adj."
+
     def test_save_creates_valid_json(self, sample_level, tmp_path):
         with patch("src.scraper.get_data_processed_dir", return_value=tmp_path):
             save_level_data(sample_level)
@@ -313,6 +324,7 @@ class TestScrapeLevel:
         assert len(level.grammar_points) == 1
         assert level.grammar_points[0].name == "Point A"
         assert level.grammar_points[0].url_slug == "ASGETNCO"
+        assert level.grammar_points[0].pattern == "Subj. + Verb"
         assert len(level.grammar_points[0].sentences) == 1
         assert level.grammar_points[0].sentences[0].hanzi == "我"
         assert level.grammar_points[0].sentences[0].pinyin == "Wǒ"
@@ -340,6 +352,7 @@ class TestScrapeLevel:
         level = scrape_level("A1")
         assert isinstance(level, GrammarLevel)
         assert len(level.grammar_points) == 1
+        assert level.grammar_points[0].pattern == "Subj. + Verb + Obj."
         assert len(level.grammar_points[0].sentences) == 1
         assert level.grammar_points[0].sentences[0].hanzi == "我 爱 你。"
         assert level.grammar_points[0].sentences[0].pinyin == "Wǒ ài nǐ."

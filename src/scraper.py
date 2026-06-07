@@ -192,6 +192,7 @@ def scrape_level(level: str) -> GrammarLevel:
                 level=level,
                 url_slug=url_slug,
                 full_url=full_url,
+                pattern=link.get("pattern", ""),
                 sentences=sentences,
             )
             grammar_points.append(gp)
@@ -213,6 +214,7 @@ def save_level_data(level: GrammarLevel) -> None:
             "level": gp.level,
             "url_slug": gp.url_slug,
             "full_url": gp.full_url,
+            "pattern": gp.pattern,
             "sentences": [
                 {
                     "hanzi": s.hanzi,
@@ -249,6 +251,7 @@ def load_level_data(level_name: str) -> GrammarLevel:
             level=gp.get("level", level_name),
             url_slug=gp.get("url_slug", ""),
             full_url=gp.get("full_url", ""),
+            pattern=gp.get("pattern", ""),
             sentences=[
                 ExampleSentence(
                     hanzi=s.get("hanzi", ""),

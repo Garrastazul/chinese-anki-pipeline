@@ -13,7 +13,7 @@ from src.utils import get_audio_dir
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_PACKAGES = ["requests", "bs4", "lxml", "edge_tts", "genanki", "jieba"]
+REQUIRED_PACKAGES = ["requests", "bs4", "lxml", "edge_tts", "genanki", "jieba", "tqdm"]
 
 
 def install_dependencies() -> None:

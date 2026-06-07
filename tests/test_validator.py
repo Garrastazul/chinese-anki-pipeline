@@ -80,6 +80,21 @@ class TestValidateSentence:
         assert result["is_valid"] is True
 
     @patch("src.validator.requests.post")
+    def test_connection_error_returns_immediately(self, mock_post, sample_sentence):
+        mock_post.side_effect = requests.ConnectionError("Connection refused")
+        result = validate_sentence(sample_sentence, "Test")
+        assert result["is_valid"] is False
+        assert "connection error" in result.get("notes", "").lower()
+        assert mock_post.call_count == 1
+
+    @patch("src.validator.requests.post")
+    def test_wsl_not_suggested_in_error(self, mock_post, sample_sentence):
+        mock_post.side_effect = requests.ConnectionError("Connection refused")
+        result = validate_sentence(sample_sentence, "Test")
+        assert "wsl" not in result.get("notes", "").lower()
+        assert "ubuntu" not in result.get("notes", "").lower()
+
+    @patch("src.validator.requests.post")
     def test_retry_three_attempts(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -118,6 +133,45 @@ class TestValidateSentence:
         assert "translation_errors" in user_content
 
     @patch("src.validator.requests.post")
+    def test_prompt_includes_pattern_when_provided(self, mock_post):
+        s = ExampleSentence("我 爱 你。", "Wǒ ài nǐ.", "I love you.")
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"is_valid": True, "key_word": ""})}}]
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        validate_sentence(s, "Test Point", "Subj. + Verb + Obj.")
+        content = mock_post.call_args[1]["json"]["messages"][1]["content"]
+        assert "Pattern: Subj. + Verb + Obj." in content
+
+    @patch("src.validator.requests.post")
+    def test_prompt_omits_pattern_when_empty(self, mock_post, sample_sentence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"is_valid": True, "key_word": ""})}}]
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        validate_sentence(sample_sentence, "Test Point")
+        content = mock_post.call_args[1]["json"]["messages"][1]["content"]
+        assert "Pattern:" not in content
+
+    @patch("src.validator.requests.post")
+    def test_pattern_graceful_without_pattern_param(self, mock_post, sample_sentence):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": json.dumps({"is_valid": True})}}]
+        }
+        mock_resp.raise_for_status.return_value = None
+        mock_post.return_value = mock_resp
+
+        result = validate_sentence(sample_sentence, "Test")
+        assert result["is_valid"] is True
+
+    @patch("src.validator.requests.post")
     def test_prompt_uses_correct_model_and_format(self, mock_post, sample_sentence):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
@@ -143,6 +197,28 @@ class TestValidateGrammarPoint:
         assert mock_vs.call_count == 2
         assert result.sentences[0].is_valid is True
         assert result.sentences[0].key_word == "和"
+
+    @patch("src.validator.validate_sentence")
+    def test_passes_pattern_to_validate_sentence(self, mock_vs):
+        s = ExampleSentence("A", "B", "C")
+        gp = GrammarPoint(
+            name="T", level="A1", url_slug="t",
+            full_url="x", pattern="Pattern: XYZ", sentences=[s]
+        )
+        mock_vs.return_value = {"is_valid": True, "key_word": ""}
+        validate_grammar_point(gp)
+        mock_vs.assert_called_with(s, "T", "Pattern: XYZ")
+
+    @patch("src.validator.validate_sentence")
+    def test_pattern_empty_by_default(self, mock_vs):
+        s = ExampleSentence("A", "B", "C")
+        gp = GrammarPoint(
+            name="T", level="A1", url_slug="t",
+            full_url="x", sentences=[s]
+        )
+        mock_vs.return_value = {"is_valid": True, "key_word": ""}
+        validate_grammar_point(gp)
+        mock_vs.assert_called_with(s, "T", "")
 
 
 class TestTranslationErrorDetection:
@@ -407,6 +483,41 @@ class TestValidationEdgeCases:
 
         result = validate_sentence(s, "Quoting speech")
         assert result["is_valid"] is True
+
+
+class TestAlwaysSendsDelay:
+    @patch("src.validator.time.sleep")
+    @patch("src.validator.validate_sentence")
+    def test_sleeps_always_even_after_validation_error(self, mock_vs, mock_sleep):
+        mock_vs.return_value = {
+            "is_valid": False,
+            "hanzi_errors": "",
+            "pinyin_errors": "",
+            "translation_errors": "",
+            "key_word": "",
+            "notes": "Validation error: all attempts failed",
+        }
+        s = ExampleSentence("A", "B", "C")
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
+        validate_grammar_point(gp)
+        mock_sleep.assert_called_once()
+        assert s.notes.startswith("Validation error")
+
+    @patch("src.validator.time.sleep")
+    @patch("src.validator.validate_sentence")
+    def test_sleeps_always_even_after_success(self, mock_vs, mock_sleep):
+        mock_vs.return_value = {
+            "is_valid": True,
+            "hanzi_errors": "",
+            "pinyin_errors": "",
+            "translation_errors": "",
+            "key_word": "",
+            "notes": "",
+        }
+        s = ExampleSentence("A", "B", "C")
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
+        validate_grammar_point(gp)
+        mock_sleep.assert_called_once()
 
 
 class TestErrorPropagation:

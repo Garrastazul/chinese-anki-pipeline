@@ -26,6 +26,7 @@ class GrammarPoint:
     level: str
     url_slug: str
     full_url: str
+    pattern: str = ""
     sentences: list[ExampleSentence] = field(default_factory=list)
 
     def __repr__(self) -> str:

@@ -1,17 +1,23 @@
+import os
 import pytest
+import requests
 from src.models import ExampleSentence
 from src.validator import validate_sentence
-from src.config import get
 
 
-def groq_available() -> bool:
-    api_key = get("groq.api_key")
-    return bool(api_key)
+def ollama_available() -> bool:
+    if not os.environ.get("OLLAMA_INTEGRATION"):
+        return False
+    try:
+        resp = requests.get("http://localhost:11434/api/tags", timeout=5)
+        return resp.status_code == 200
+    except Exception:
+        return False
 
 
-@pytest.mark.skipif(not groq_available(), reason="Groq API key not configured")
-class TestIntegrationWithGroq:
-    """Pruebas REALES contra Groq. Requiere API key configurada."""
+@pytest.mark.skipif(not ollama_available(), reason="Set OLLAMA_INTEGRATION=1 and ensure Ollama is running")
+class TestIntegrationWithOllama:
+    """Real integration tests against local Ollama. Requires Ollama running."""
 
     def test_correct_sentences_pass(self):
         cases = [

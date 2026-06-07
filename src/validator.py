@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 
 import requests
@@ -17,18 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 def validate_sentence(
-    sentence: ExampleSentence, grammar_point_name: str
+    sentence: ExampleSentence, grammar_point_name: str, grammar_point_pattern: str = ""
 ) -> dict:
+    pattern_line = f"\nPattern: {grammar_point_pattern}\n" if grammar_point_pattern else "\n"
     prompt = (
-        "Validate sentence for '%s':\n"
-        "Hanzi: %s\nPinyin: %s\nEN: %s\n\n"
+        f"Validate sentence for '{grammar_point_name}':\n"
+        f"Hanzi: {sentence.hanzi}\n"
+        f"Pinyin: {sentence.pinyin}\n"
+        f"EN: {sentence.translation}\n"
+        f"{pattern_line}"
         "Return JSON:\n"
         '- "is_valid": false if hanzi wrong/missing, pinyin mismatch, or translation empty/wrong\n'
         '- "hanzi_errors", "pinyin_errors", "translation_errors": "" or description\n'
         '- "key_word": keyword in hanzi (e.g. "\u4e86") or ""\n'
         '- "notes": "" or brief explanation\n\n'
         "Rules: pinyin must match hanzi exactly. Empty translation = error."
-    ) % (grammar_point_name, sentence.hanzi, sentence.pinyin, sentence.translation)
+    )
 
     model = get("ollama.model", "qwen2.5:7b")
     endpoint = get("ollama.endpoint", "http://localhost:11434/v1/chat/completions")
@@ -80,8 +83,7 @@ def validate_sentence(
             return parsed
         except requests.ConnectionError:
             logger.error(
-                "Ollama not reachable at %s. Is it running? "
-                "Start with: wsl -d Ubuntu -u root -- ollama serve",
+                "Ollama not reachable at %s. Is Ollama running?",
                 endpoint,
             )
             return {
@@ -132,7 +134,7 @@ def validate_sentence(
 
 def validate_grammar_point(gp: GrammarPoint, pbar: tqdm | None = None) -> GrammarPoint:
     for sentence in gp.sentences:
-        result = validate_sentence(sentence, gp.name)
+        result = validate_sentence(sentence, gp.name, gp.pattern)
         sentence.is_valid = result.get("is_valid", True)
         sentence.key_word = result.get("key_word") or None
         sentence.hanzi_errors = result.get("hanzi_errors", "")
@@ -142,8 +144,7 @@ def validate_grammar_point(gp: GrammarPoint, pbar: tqdm | None = None) -> Gramma
         if pbar is not None:
             pbar.update(1)
             pbar.set_postfix_str(gp.name[:40], refresh=False)
-        if not sentence.notes.startswith("Validation error"):
-            time.sleep(get("validator.sentence_delay", 0.5))
+        time.sleep(get("validator.sentence_delay", 0.5))
     return gp
 
 

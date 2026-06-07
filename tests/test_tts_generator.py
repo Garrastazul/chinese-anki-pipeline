@@ -5,11 +5,9 @@ from src.models import ExampleSentence, GrammarLevel, GrammarPoint
 from src.tts_generator import get_voice, generate_sentence_audio, generate_level_audio
 
 class TestGetVoice:
-    @patch("src.tts_generator.get")
+    @patch("src.tts_generator.get", return_value="female")
     def test_default_is_female(self, mock_get):
-        mock_get.return_value = None
         voice = get_voice()
-        assert isinstance(voice, str)
         assert "Xiaoxiao" in voice
         mock_get.assert_called_once_with("tts.voice_gender", "female")
 

@@ -23,24 +23,16 @@ try {
     exit 1
 }
 
-$wslAvailable = Get-Command wsl -ErrorAction SilentlyContinue
-if (-not $wslAvailable) {
-    Write-Host "WSL not found. Make sure Ollama is running natively."
-} else {
-    Write-Host "Starting Ollama in WSL..."
-    $stderrLog = Join-Path -Path $env:TEMP -ChildPath "ollama_wsl_stderr.log"
-    $null = Start-Process -WindowStyle Hidden -FilePath wsl -ArgumentList "ollama","serve" -RedirectStandardError $stderrLog
-    Start-Sleep -Seconds 2
-    if ((Get-Item -LiteralPath $stderrLog -ErrorAction SilentlyContinue).Length -gt 0) {
-        Write-Host "Ollama WSL stderr output (may be benign):" -ForegroundColor Yellow
-        Get-Content -LiteralPath $stderrLog | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkYellow }
-    }
-
-    Write-Host "Downloading model $Model ..."
-    wsl ollama pull "$Model"
+Write-Host "Make sure Ollama is running (start Ollama from Start Menu if not)."
+Write-Host "Downloading/verifying model $Model ..."
+try {
+    $result = & ollama pull "$Model" 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Error downloading model $Model. Verify that ollama is installed in WSL." -ForegroundColor Yellow
+        Write-Host "Error downloading model $Model. Verify that Ollama is installed and running." -ForegroundColor Yellow
+        Write-Host $result -ForegroundColor DarkYellow
     }
+} catch {
+    Write-Host "Ollama not found. Download from https://ollama.com and install." -ForegroundColor Yellow
 }
 
 Write-Host "Setup complete."

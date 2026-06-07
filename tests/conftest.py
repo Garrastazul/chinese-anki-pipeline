@@ -31,6 +31,7 @@ def sample_grammar_point(sample_sentence_full, sample_sentence) -> GrammarPoint:
         level="A1",
         url_slug="ASGP0KFF",
         full_url="https://resources.allsetlearning.com/chinese/grammar/ASGP0KFF",
+        pattern="N. + 和 + N.",
         sentences=[sample_sentence_full, sample_sentence],
     )
 

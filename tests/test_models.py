@@ -65,6 +65,14 @@ def test_example_sentence_fields_are_mutable():
     assert s.key_word == "你"
 
 
+def test_grammar_point_pattern_default():
+    gp = GrammarPoint(name="Test", level="A1", url_slug="test", full_url="x")
+    assert gp.pattern == ""
+
+def test_grammar_point_pattern_custom():
+    gp = GrammarPoint(name="Test", level="A1", url_slug="test", full_url="x", pattern="Subj. + Verb")
+    assert gp.pattern == "Subj. + Verb"
+
 def test_empty_sentences_list(sample_grammar_point):
     gp = sample_grammar_point
     assert isinstance(gp.sentences, list)
