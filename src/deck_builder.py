@@ -230,6 +230,103 @@ def _apply_pinyin_cloze(hanzi: str, pinyin_str: str, keyword: str, _token_range:
     return " ".join(parts)
 
 
+def _get_available_types(sentence: ExampleSentence) -> list[str]:
+    """Return which card types are available for the given sentence."""
+    available = ["hanzi_full", "en_hanzi"]
+    if sentence.key_word:
+        available.append("cloze")
+    if len(jieba.lcut(sentence.hanzi)) >= 2:
+        available.append("reorder")
+    return available
+
+
+def _build_hanzi_full_card(
+    sentence: ExampleSentence, gp: GrammarPoint, audio_field: str, models: dict
+) -> genanki.Note:
+    return genanki.Note(
+        model=models["hanzi_full"],
+        fields=[
+            sentence.hanzi,
+            sentence.pinyin,
+            sentence.translation,
+            audio_field,
+            gp.name,
+            gp.full_url,
+        ],
+        guid=hash_string(sentence.hanzi + "hanzi_full"),
+    )
+
+
+def _build_en_hanzi_card(
+    sentence: ExampleSentence, gp: GrammarPoint, audio_field: str, models: dict
+) -> genanki.Note:
+    return genanki.Note(
+        model=models["en_hanzi"],
+        fields=[
+            sentence.translation,
+            sentence.hanzi,
+            sentence.pinyin,
+            audio_field,
+            gp.name,
+            gp.full_url,
+        ],
+        guid=hash_string(sentence.hanzi + "en_hanzi"),
+    )
+
+
+def _build_cloze_card(
+    sentence: ExampleSentence, gp: GrammarPoint, audio_field: str, models: dict
+) -> genanki.Note:
+    kw = sentence.key_word
+    hanzi_cloze = _apply_cloze(sentence.hanzi, kw)
+    kw_tr = _get_keyword_token_range(sentence.hanzi, sentence.pinyin, kw)
+    kw_py = _get_keyword_pinyin(sentence.hanzi, sentence.pinyin, kw, kw_tr)
+    pinyin_cloze = _apply_pinyin_cloze(sentence.hanzi, sentence.pinyin, kw, kw_tr)
+    return genanki.Note(
+        model=models["cloze"],
+        fields=[
+            hanzi_cloze,
+            pinyin_cloze,
+            kw,
+            kw_py,
+            sentence.translation,
+            gp.full_url,
+            gp.name,
+        ],
+        guid=hash_string(sentence.hanzi + "cloze"),
+    )
+
+
+def _build_reorder_card(
+    sentence: ExampleSentence, gp: GrammarPoint, audio_field: str, models: dict
+) -> genanki.Note:
+    words = jieba.lcut(sentence.hanzi)
+    sc_words = words.copy()
+    random.Random(sentence.hanzi).shuffle(sc_words)
+    scrambled = " · ".join(sc_words)
+    return genanki.Note(
+        model=models["reorder"],
+        fields=[
+            scrambled,
+            sentence.hanzi,
+            sentence.pinyin,
+            sentence.translation,
+            audio_field,
+            gp.full_url,
+            gp.name,
+        ],
+        guid=hash_string(sentence.hanzi + "reorder"),
+    )
+
+
+_CARD_BUILDERS: dict[str, callable] = {
+    "hanzi_full": _build_hanzi_full_card,
+    "en_hanzi": _build_en_hanzi_card,
+    "cloze": _build_cloze_card,
+    "reorder": _build_reorder_card,
+}
+
+
 def build_sentence_cards(
     level: GrammarLevel, models: dict
 ) -> list[genanki.Note]:
@@ -243,6 +340,15 @@ def build_sentence_cards(
         "skipped_short": 0,
     }
 
+    mode = get("generation.mode", "all")
+    config_types = get(
+        "generation.card_types",
+        ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+    )
+    num_types = len(config_types)
+
+    type_index = 0
+
     for gp in level.grammar_points:
         for sentence in gp.sentences:
             if not sentence.is_valid:
@@ -254,98 +360,44 @@ def build_sentence_cards(
                 else ""
             )
 
-            # Hanzi->Full
-            notes.append(
-                genanki.Note(
-                    model=models["hanzi_full"],
-                    fields=[
-                        sentence.hanzi,
-                        sentence.pinyin,
-                        sentence.translation,
-                        audio_field,
-                        gp.name,
-                        gp.full_url,
-                    ],
-                    guid=hash_string(sentence.hanzi + "hanzi_full"),
-                )
-            )
-            stats["hanzi_full"] += 1
+            if mode == "rotate":
+                available = _get_available_types(sentence)
+                assigned_type = None
+                for offset in range(num_types):
+                    candidate = config_types[(type_index + offset) % num_types]
+                    if candidate in available:
+                        assigned_type = candidate
+                        break
 
-            # EN->Hanzi
-            notes.append(
-                genanki.Note(
-                    model=models["en_hanzi"],
-                    fields=[
-                        sentence.translation,
-                        sentence.hanzi,
-                        sentence.pinyin,
-                        audio_field,
-                        gp.name,
-                        gp.full_url,
-                    ],
-                    guid=hash_string(sentence.hanzi + "en_hanzi"),
-                )
-            )
-            stats["en_hanzi"] += 1
+                if assigned_type is None:
+                    continue
 
-            # Cloze
-            kw = sentence.key_word
-            if kw:
-                hanzi_cloze = _apply_cloze(sentence.hanzi, kw)
-                kw_tr = _get_keyword_token_range(
-                    sentence.hanzi, sentence.pinyin, kw
-                )
-                kw_py = _get_keyword_pinyin(
-                    sentence.hanzi, sentence.pinyin, kw, kw_tr
-                )
-                pinyin_cloze = _apply_pinyin_cloze(
-                    sentence.hanzi, sentence.pinyin, kw, kw_tr
-                )
+                type_index = (type_index + 1) % num_types
 
-                notes.append(
-                    genanki.Note(
-                        model=models["cloze"],
-                        fields=[
-                            hanzi_cloze,
-                            pinyin_cloze,
-                            kw,
-                            kw_py,
-                            sentence.translation,
-                            gp.full_url,
-                            gp.name,
-                        ],
-                        guid=hash_string(sentence.hanzi + "cloze"),
-                    )
-                )
-                stats["cloze"] += 1
+                builder = _CARD_BUILDERS[assigned_type]
+                notes.append(builder(sentence, gp, audio_field, models))
+                stats[assigned_type] += 1
+
             else:
-                stats["skipped_no_keyword"] += 1
+                # Default "all" mode — original behavior
 
-            # Reorder
-            words = jieba.lcut(sentence.hanzi)
-            if len(words) >= 2:
-                sc_words = words.copy()
-                random.Random(sentence.hanzi).shuffle(sc_words)
-                scrambled = " · ".join(sc_words)
+                notes.append(_build_hanzi_full_card(sentence, gp, audio_field, models))
+                stats["hanzi_full"] += 1
 
-                notes.append(
-                    genanki.Note(
-                        model=models["reorder"],
-                        fields=[
-                            scrambled,
-                            sentence.hanzi,
-                            sentence.pinyin,
-                            sentence.translation,
-                            audio_field,
-                            gp.full_url,
-                            gp.name,
-                        ],
-                        guid=hash_string(sentence.hanzi + "reorder"),
-                    )
-                )
-                stats["reorder"] += 1
-            else:
-                stats["skipped_short"] += 1
+                notes.append(_build_en_hanzi_card(sentence, gp, audio_field, models))
+                stats["en_hanzi"] += 1
+
+                if sentence.key_word:
+                    notes.append(_build_cloze_card(sentence, gp, audio_field, models))
+                    stats["cloze"] += 1
+                else:
+                    stats["skipped_no_keyword"] += 1
+
+                if len(jieba.lcut(sentence.hanzi)) >= 2:
+                    notes.append(_build_reorder_card(sentence, gp, audio_field, models))
+                    stats["reorder"] += 1
+                else:
+                    stats["skipped_short"] += 1
 
     logger.info("Card stats: %s", stats)
     return notes

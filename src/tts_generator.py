@@ -26,13 +26,24 @@ def get_voice() -> str:
     return _VOICE_MAP.get(gender, "zh-CN-XiaoxiaoNeural")
 
 
+def _get_tts_param(key: str, default: str) -> str:
+    return get(f"tts.{key}", default)
+
+
 async def generate_audio(text: str, filename: str) -> Path:
     audio_dir = get_audio_dir()
     audio_dir.mkdir(parents=True, exist_ok=True)
     filepath = audio_dir / filename
     if filepath.exists():
         return filepath
-    tts = edge_tts.Communicate(text, get_voice())
+    clean_text = text.replace(" ", "")
+    tts = edge_tts.Communicate(
+        clean_text,
+        get_voice(),
+        rate=_get_tts_param("rate", "-15%"),
+        volume=_get_tts_param("volume", "+0%"),
+        pitch=_get_tts_param("pitch", "+0Hz"),
+    )
     await tts.save(str(filepath))
     return filepath
 

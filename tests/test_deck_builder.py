@@ -5,7 +5,7 @@ import genanki
 from src.models import GrammarLevel, GrammarPoint, ExampleSentence
 from src.deck_builder import (
     create_models, _get_keyword_pinyin, _apply_cloze, _apply_pinyin_cloze,
-    build_sentence_cards, build_deck, export_deck, build_and_export,
+    _get_available_types, build_sentence_cards, build_deck, export_deck, build_and_export,
 )
 
 
@@ -133,6 +133,148 @@ class TestClozeConsistency:
                 p_cloze = _apply_pinyin_cloze(hanzi, pinyin, kw)
         assert h_cloze == "{{c1::是}} 事实"
         assert p_cloze == "{{c1::shì}} shì shí"
+
+
+class TestGetAvailableTypes:
+    def test_all_types_available(self):
+        s = ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去")
+        assert _get_available_types(s) == ["hanzi_full", "en_hanzi", "cloze", "reorder"]
+
+    def test_no_keyword(self):
+        s = ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word=None)
+        assert _get_available_types(s) == ["hanzi_full", "en_hanzi", "reorder"]
+
+    def test_single_word(self):
+        s = ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word="好")
+        assert _get_available_types(s) == ["hanzi_full", "en_hanzi", "cloze"]
+
+    def test_basic_only(self):
+        s = ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word=None)
+        assert _get_available_types(s) == ["hanzi_full", "en_hanzi"]
+
+
+class TestBuildSentenceCardsRotate:
+    def test_rotate_one_card_per_sentence(self, sample_level):
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+            }.get(key, default)
+
+            models = create_models()
+            notes = build_sentence_cards(sample_level, models)
+            assert len(notes) == 2
+
+    def test_rotate_cycles_through_types(self):
+        sentences = [
+            ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去", audio_filename="1.mp3"),
+            ExampleSentence(hanzi="我 很 好", pinyin="Wǒ hěn hǎo", translation="I am good", is_valid=True, key_word="很", audio_filename="2.mp3"),
+            ExampleSentence(hanzi="他 是 学生", pinyin="Tā shì xuéshēng", translation="He is a student", is_valid=True, key_word="是", audio_filename="3.mp3"),
+            ExampleSentence(hanzi="你 吃 饭 了 吗", pinyin="Nǐ chī fàn le ma", translation="Have you eaten?", is_valid=True, key_word="了", audio_filename="4.mp3"),
+        ]
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=sentences)
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        models = create_models()
+
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+            }.get(key, default)
+
+            notes = build_sentence_cards(level, models)
+            assert len(notes) == 4
+            model_names = [n.model.name for n in notes]
+            assert model_names == ["Hanzi->Full", "EN->Hanzi", "Cloze", "Reorder"]
+
+    def test_rotate_falls_back_when_cloze_unavailable(self):
+        sentences = [
+            ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word=None, audio_filename="1.mp3"),
+        ]
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=sentences)
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        models = create_models()
+
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+            }.get(key, default)
+
+            notes = build_sentence_cards(level, models)
+            assert len(notes) == 1
+            assert notes[0].model.name == "Hanzi->Full"
+
+    def test_rotate_falls_back_to_next_available(self):
+        """Sentence 3 lacks keyword and is single-word → only hanzi_full, en_hanzi."""
+        sentences = [
+            ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去", audio_filename="1.mp3"),
+            ExampleSentence(hanzi="我 很 好", pinyin="Wǒ hěn hǎo", translation="I am good", is_valid=True, key_word="很", audio_filename="2.mp3"),
+            ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word=None, audio_filename="3.mp3"),
+        ]
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=sentences)
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        models = create_models()
+
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+            }.get(key, default)
+
+            notes = build_sentence_cards(level, models)
+            assert len(notes) == 3
+            model_names = [n.model.name for n in notes]
+            # 0 → hanzi_full, 1 → en_hanzi, 2 → cloze not avail, reorder not avail, → hanzi_full
+            assert model_names == ["Hanzi->Full", "EN->Hanzi", "Hanzi->Full"]
+
+    def test_rotate_guids_unique(self, sample_level):
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+            }.get(key, default)
+
+            models = create_models()
+            notes = build_sentence_cards(sample_level, models)
+            guids = [n.guid for n in notes]
+            assert len(guids) == len(set(guids))
+
+    def test_rotate_with_custom_card_types(self):
+        sentences = [
+            ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去", audio_filename="1.mp3"),
+            ExampleSentence(hanzi="我 很 好", pinyin="Wǒ hěn hǎo", translation="I am good", is_valid=True, key_word="很", audio_filename="2.mp3"),
+        ]
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=sentences)
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        models = create_models()
+
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["cloze", "reorder"],
+            }.get(key, default)
+
+            notes = build_sentence_cards(level, models)
+            assert len(notes) == 2
+            model_names = [n.model.name for n in notes]
+            assert model_names == ["Cloze", "Reorder"]
+
+    def test_rotate_skips_invalid_sentences(self):
+        valid = ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去", audio_filename="1.mp3")
+        invalid = ExampleSentence(hanzi="坏", pinyin="huài", translation="bad", is_valid=False, key_word=None)
+        gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[valid, invalid])
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        models = create_models()
+
+        with patch("src.deck_builder.get") as mock_get:
+            mock_get.side_effect = lambda key, default=None: {
+                "generation.mode": "rotate",
+                "generation.card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"],
+            }.get(key, default)
+
+            notes = build_sentence_cards(level, models)
+            assert len(notes) == 1
 
 
 class TestBuildSentenceCards:

@@ -56,7 +56,7 @@ class TestRunPipeline:
         mock_scrape.return_value = sample_level
         mock_load.return_value = sample_level
         mock_build.return_value = Path("/fake/output.apkg")
-        run_pipeline(level_name="A1", skip_scrape=False, skip_validate=True, skip_tts=True)
+        run_pipeline(level_name="A1", skip_scrape=False, skip_validate=True, skip_pinyin=True, skip_tts=True)
         mock_scrape.assert_called_once()
         mock_save.assert_called_once()
         mock_load.assert_not_called()

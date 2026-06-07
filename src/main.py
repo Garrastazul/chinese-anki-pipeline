@@ -7,13 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from src import scraper, validator, tts_generator, deck_builder
+from src import scraper, validator, tts_generator, deck_builder, pinyin_generator
 from src.config import get
 from src.utils import get_audio_dir
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_PACKAGES = ["requests", "bs4", "lxml", "edge_tts", "genanki", "jieba", "tqdm"]
+REQUIRED_PACKAGES = ["requests", "bs4", "lxml", "edge_tts", "genanki", "jieba", "pypinyin", "tqdm"]
 
 
 def install_dependencies() -> None:
@@ -56,6 +56,7 @@ def run_pipeline(
     level_name: str | None = None,
     skip_scrape: bool = False,
     skip_validate: bool = False,
+    skip_pinyin: bool = False,
     skip_tts: bool = False,
     all_levels: bool = False,
 ) -> None:
@@ -65,16 +66,17 @@ def run_pipeline(
 
     if all_levels:
         for ln in levels:
-            _run_single_level(ln, skip_scrape, skip_validate, skip_tts)
+            _run_single_level(ln, skip_scrape, skip_validate, skip_pinyin, skip_tts)
         return
 
-    _run_single_level(level_name, skip_scrape, skip_validate, skip_tts)
+    _run_single_level(level_name, skip_scrape, skip_validate, skip_pinyin, skip_tts)
 
 
 def _run_single_level(
     level_name: str,
     skip_scrape: bool,
     skip_validate: bool,
+    skip_pinyin: bool,
     skip_tts: bool,
 ) -> None:
     level = None
@@ -102,8 +104,16 @@ def _run_single_level(
         with_kw = sum(1 for gp in level.grammar_points for s in gp.sentences if s.key_word)
         print(f"  Validation: {valid} valid, {invalid} invalid, {with_kw} with key_word")
 
+    if not skip_pinyin:
+        logger.info("Step c) Regenerating pinyin for %s...", level_name)
+        if level is None:
+            level = scraper.load_level_data(level_name)
+        level = pinyin_generator.regenerate_level_pinyin(level)
+        scraper.save_level_data(level)
+        print(f"  Pinyin regenerated for all valid sentences")
+
     if not skip_tts:
-        logger.info("Step c) Generating TTS audio for %s...", level_name)
+        logger.info("Step d) Generating TTS audio for %s...", level_name)
         if level is None:
             level = scraper.load_level_data(level_name)
         level = tts_generator.generate_level_audio(level)
@@ -112,7 +122,7 @@ def _run_single_level(
         audio_count = len(list(audio_dir.glob("*.mp3"))) if audio_dir.exists() else 0
         print(f"  Audio files: {audio_count}")
 
-    logger.info("Step d) Building Anki deck for %s...", level_name)
+    logger.info("Step e) Building Anki deck for %s...", level_name)
     if level is None:
         level = scraper.load_level_data(level_name)
     path = deck_builder.build_and_export(level)
@@ -135,6 +145,7 @@ def main() -> None:
     parser.add_argument("--skip-scrape", action="store_true", help="Skip scraping step")
     parser.add_argument("--skip-validate", action="store_true", help="Skip validation step")
     parser.add_argument("--skip-tts", action="store_true", help="Skip TTS generation step")
+    parser.add_argument("--skip-pinyin", action="store_true", help="Skip pinyin regeneration step")
     parser.add_argument("--all-levels", action="store_true", help="Process all levels configured in config.json")
     parser.add_argument("--install", action="store_true", help="Install dependencies and exit")
     args = parser.parse_args()
@@ -151,6 +162,7 @@ def main() -> None:
         level_name=args.level,
         skip_scrape=args.skip_scrape,
         skip_validate=args.skip_validate,
+        skip_pinyin=args.skip_pinyin,
         skip_tts=args.skip_tts,
         all_levels=args.all_levels,
     )

@@ -5,7 +5,10 @@
     "model": "qwen2.5:1.5b"
   },
   "tts": {
-    "voice_gender": "male"
+    "voice_gender": "male",
+    "rate": "-20%",
+    "volume": "+0%",
+    "pitch": "-20Hz"
   },
   "anki": {
     "deck_name_template": "Chinese Grammar - {level}"
@@ -16,5 +19,9 @@
   },
   "validator": {
     "sentence_delay": 0.5
+  },
+  "generation": {
+    "mode": "all",
+    "card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"]
   }
 }
