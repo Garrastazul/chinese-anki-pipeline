@@ -39,6 +39,8 @@ def test_grammar_point_repr(sample_grammar_point):
     r = repr(sample_grammar_point)
     assert "GrammarPoint" in r
     assert "ASGP0KFF" in r
+    assert "pattern" in r
+    assert "N. + 和 + N." in r
 
 
 def test_grammar_level_defaults():

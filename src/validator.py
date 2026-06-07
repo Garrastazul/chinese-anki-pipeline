@@ -10,7 +10,6 @@ from tqdm import tqdm
 from src.config import get
 from src.models import ExampleSentence, GrammarLevel, GrammarPoint
 from src.scraper import load_level_data, save_level_data
-from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +24,12 @@ def validate_sentence(
         f"Pinyin: {sentence.pinyin}\n"
         f"EN: {sentence.translation}\n"
         f"{pattern_line}"
-        "Return JSON:\n"
-        '- "is_valid": false if hanzi wrong/missing, pinyin mismatch, or translation empty/wrong\n'
-        '- "hanzi_errors", "pinyin_errors", "translation_errors": "" or description\n'
-        '- "key_word": keyword in hanzi (e.g. "\u4e86") or ""\n'
-        '- "notes": "" or brief explanation\n\n'
-        "Rules: pinyin must match hanzi exactly. Empty translation = error."
+        f"Return JSON:\n"
+        f'- "is_valid": false if hanzi wrong/missing, pinyin mismatch, or translation empty/wrong\n'
+        f'- "hanzi_errors", "pinyin_errors", "translation_errors": "" or description\n'
+        f'- "key_word": keyword in hanzi (e.g. "了") or ""\n'
+        f'- "notes": "" or brief explanation\n\n'
+        f"Rules: pinyin must match hanzi exactly. Empty translation = error."
     )
 
     model = get("ollama.model", "qwen2.5:7b")
@@ -101,11 +100,15 @@ def validate_sentence(
             time.sleep(2 ** attempt)
             continue
         except requests.HTTPError as e:
-            status = e.response.status_code
-            try:
-                body_preview = e.response.text[:500]
-            except Exception:
-                body_preview = "<unreadable>"
+            if e.response is not None:
+                status = e.response.status_code
+                try:
+                    body_preview = e.response.text[:500]
+                except Exception:
+                    body_preview = "<unreadable>"
+            else:
+                status = 0
+                body_preview = "<no response>"
             logger.warning(
                 "Ollama request failed (attempt %d): status=%d, body=%.200s",
                 attempt + 1, status, body_preview,
@@ -150,7 +153,7 @@ def validate_grammar_point(gp: GrammarPoint, pbar: tqdm | None = None) -> Gramma
 
 def validate_level(level: GrammarLevel) -> GrammarLevel:
     total = sum(len(gp.sentences) for gp in level.grammar_points)
-    with tqdm(total=total, desc="Validating", unit="sent", ncols=100) as pbar:
+    with tqdm(total=total, desc="Validating", unit="sent", ncols=120) as pbar:
         for gp in level.grammar_points:
             validate_grammar_point(gp, pbar)
     return level

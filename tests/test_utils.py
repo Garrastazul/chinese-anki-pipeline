@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from src.utils import get_project_root, get_audio_dir, get_output_dir, get_data_raw_dir, get_data_processed_dir, hash_string
+from src.utils import get_project_root, get_audio_dir, get_output_dir, get_data_processed_dir, hash_string
 
 
 class TestPaths:
@@ -20,11 +20,6 @@ class TestPaths:
         assert "output" in str(d)
         assert d.is_absolute()
 
-    def test_get_data_raw_dir(self):
-        d = get_data_raw_dir()
-        assert "raw" in str(d)
-        assert "data" in str(d)
-
     def test_get_data_processed_dir(self):
         d = get_data_processed_dir()
         assert "processed" in str(d)
@@ -32,7 +27,7 @@ class TestPaths:
 
     def test_all_paths_under_project_root(self):
         root = get_project_root()
-        for d in [get_audio_dir(), get_output_dir(), get_data_raw_dir(), get_data_processed_dir()]:
+        for d in [get_audio_dir(), get_output_dir(), get_data_processed_dir()]:
             try:
                 d.relative_to(root)
             except ValueError:

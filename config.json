@@ -2,7 +2,7 @@
   "levels": ["A1"],
   "ollama": {
     "endpoint": "http://localhost:11434/v1/chat/completions",
-    "model": "qwen2.5:7b"
+    "model": "qwen2.5:1.5b"
   },
   "tts": {
     "voice_gender": "male"

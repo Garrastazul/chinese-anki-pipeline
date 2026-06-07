@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch
 from pathlib import Path
 from src.models import ExampleSentence, GrammarLevel, GrammarPoint
-from src.tts_generator import get_voice, generate_sentence_audio, generate_level_audio
+from src.tts_generator import get_voice, generate_sentence_audio, generate_level_audio, _EXECUTOR
 
 class TestGetVoice:
     @patch("src.tts_generator.get", return_value="female")
@@ -25,7 +25,13 @@ class TestGetVoice:
         assert "Xiaoxiao" in voice
         mock_get.assert_called_once_with("tts.voice_gender", "female")
 
-class TestGenerateSentenceAudio:
+class TestExecutor:
+    def test_executor_is_module_level_singleton(self):
+        assert _EXECUTOR is not None
+        from concurrent.futures import ThreadPoolExecutor
+        assert isinstance(_EXECUTOR, ThreadPoolExecutor)
+        assert _EXECUTOR._max_workers == 1
+
     @patch("src.tts_generator._run_async")
     @patch("src.tts_generator.hash_string")
     def test_generates_and_updates_filename(self, mock_hash, mock_run):

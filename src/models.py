@@ -30,7 +30,7 @@ class GrammarPoint:
     sentences: list[ExampleSentence] = field(default_factory=list)
 
     def __repr__(self) -> str:
-        return f"GrammarPoint(name={self.name!r}, level={self.level!r}, url_slug={self.url_slug!r})"
+        return f"GrammarPoint(name={self.name!r}, level={self.level!r}, url_slug={self.url_slug!r}, pattern={self.pattern!r})"
 
 
 @dataclass

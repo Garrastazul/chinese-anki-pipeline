@@ -591,5 +591,32 @@ class TestErrorPropagation:
 class TestValidateLevel:
     @patch("src.validator.validate_grammar_point")
     def test_validates_all_points(self, mock_vgp, sample_level):
-        validate_level(sample_level)
+        result = validate_level(sample_level)
         assert mock_vgp.call_count == 1
+        assert result is sample_level
+
+    @patch("src.validator.time.sleep")
+    @patch("src.validator.validate_grammar_point")
+    def test_returns_same_level_object(self, mock_vgp, mock_sleep, sample_level):
+        result = validate_level(sample_level)
+        assert result is sample_level
+        assert result.level == "A1"
+        assert len(result.grammar_points) == 1
+
+    @patch("src.validator.validate_grammar_point")
+    def test_empty_level_does_not_crash(self, mock_vgp):
+        empty = GrammarLevel(level="A1", grammar_points=[])
+        result = validate_level(empty)
+        assert result is empty
+        mock_vgp.assert_not_called()
+
+    @patch("src.validator.tqdm")
+    @patch("src.validator.validate_grammar_point")
+    def test_tqdm_created_with_total_sentences(self, mock_vgp, mock_tqdm, sample_level):
+        mock_pbar = MagicMock()
+        mock_tqdm.return_value.__enter__.return_value = mock_pbar
+        validate_level(sample_level)
+        mock_tqdm.assert_called_once()
+        assert mock_tqdm.call_args[1]["total"] == 2
+        assert mock_tqdm.call_args[1]["desc"] == "Validating"
+        assert mock_tqdm.call_args[1]["unit"] == "sent"

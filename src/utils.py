@@ -16,10 +16,6 @@ def get_output_dir() -> Path:
     return get_project_root() / "output"
 
 
-def get_data_raw_dir() -> Path:
-    return get_project_root() / "data" / "raw"
-
-
 def get_data_processed_dir() -> Path:
     return get_project_root() / "data" / "processed"
 

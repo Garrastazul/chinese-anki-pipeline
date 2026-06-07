@@ -10,7 +10,13 @@ def ollama_available() -> bool:
         return False
     try:
         resp = requests.get("http://localhost:11434/api/tags", timeout=5)
-        return resp.status_code == 200
+        if resp.status_code != 200:
+            return False
+        from src.config import get
+        expected = get("ollama.model", "qwen2.5:7b")
+        models = resp.json().get("models", [])
+        model_names = [m.get("name", "") for m in models]
+        return any(expected in name for name in model_names)
     except Exception:
         return False
 

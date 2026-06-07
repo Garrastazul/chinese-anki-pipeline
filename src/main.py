@@ -90,7 +90,12 @@ def _run_single_level(
         logger.info("Step b) Validating sentences for %s...", level_name)
         if level is None:
             level = scraper.load_level_data(level_name)
-        level = validator.validate_level(level)
+        try:
+            level = validator.validate_level(level)
+        except KeyboardInterrupt:
+            scraper.save_level_data(level)
+            print(f"\nInterrupted during validation. Partial results saved for {level_name}.")
+            sys.exit(130)
         scraper.save_level_data(level)
         valid = sum(1 for gp in level.grammar_points for s in gp.sentences if s.is_valid)
         invalid = sum(1 for gp in level.grammar_points for s in gp.sentences if not s.is_valid)
@@ -137,6 +142,10 @@ def main() -> None:
     if args.install:
         install_dependencies()
         return
+
+    valid_levels = get("levels", ["A1"])
+    if args.level not in valid_levels:
+        logger.warning("Level %r not in configured levels %s", args.level, valid_levels)
 
     run_pipeline(
         level_name=args.level,

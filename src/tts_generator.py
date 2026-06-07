@@ -37,15 +37,17 @@ async def generate_audio(text: str, filename: str) -> Path:
     return filepath
 
 
+_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+
 def _run_async(coro):
     """Run an async coroutine safely from sync code, even if a loop is running."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        future = pool.submit(asyncio.run, coro)
-        return future.result()
+    future = _EXECUTOR.submit(asyncio.run, coro)
+    return future.result()
 
 
 def generate_sentence_audio(sentence: ExampleSentence) -> ExampleSentence:
