@@ -34,24 +34,15 @@ def validate_sentence(
     sentence: ExampleSentence, grammar_point_name: str
 ) -> dict:
     prompt = (
-        "You are a Mandarin Chinese teacher. Validate the following sentence:\n"
-        "\n"
-        f"Grammar point: {grammar_point_name}  "
-        f"Hanzi: {sentence.hanzi}  "
-        f"Pinyin: {sentence.pinyin}  "
-        f"Translation: {sentence.translation}\n"
-        "\n"
-        "Respond in JSON with the following keys:\n"
-        '  "is_valid": true/false,\n'
-        '  "hanzi_errors": "",\n'
-        '  "pinyin_errors": "",\n'
-        '  "translation_errors": "",\n'
-        '  "key_word": "the keyword (in hanzi) that exemplifies this grammar point",\n'
-        '  "notes": ""\n'
-        "\n"
-        'key_word must be the specific word (e.g. "和", "了", "的") '
-        "that illustrates the grammar point. If you cannot identify one, set it to \"\"."
-    )
+        "Validate sentence for '%s':\n"
+        "Hanzi: %s\nPinyin: %s\nEN: %s\n\n"
+        "Return JSON:\n"
+        '- "is_valid": false if hanzi wrong/missing, pinyin mismatch, or translation empty/wrong\n'
+        '- "hanzi_errors", "pinyin_errors", "translation_errors": "" or description\n'
+        '- "key_word": keyword in hanzi (e.g. "了") or ""\n'
+        '- "notes": "" or brief explanation\n\n'
+        "Rules: pinyin must match hanzi exactly. Empty translation = error."
+    ) % (grammar_point_name, sentence.hanzi, sentence.pinyin, sentence.translation)
 
     model = get("groq.model", "llama-3.3-70b-versatile")
     payload = {
@@ -59,12 +50,12 @@ def validate_sentence(
         "messages": [
             {
                 "role": "system",
-                "content": "You are a Mandarin Chinese teacher. Always respond in valid JSON.",
+                "content": "You validate Chinese sentences. Respond in JSON only.",
             },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0,
-        "max_tokens": 300,
+        "max_tokens": 500,
         "response_format": {"type": "json_object"},
     }
 
@@ -77,21 +68,53 @@ def validate_sentence(
                 timeout=30,
             )
             resp.raise_for_status()
-            data = resp.json()
-            response_text = data["choices"][0]["message"]["content"].strip()
-
-            parsed = json.loads(response_text)
+            try:
+                data = resp.json()
+            except json.JSONDecodeError:
+                logger.warning("Groq returned non-JSON response: %.200s", resp.text)
+                time.sleep(2 ** attempt)
+                continue
+            try:
+                response_text = data["choices"][0]["message"]["content"].strip()
+            except (KeyError, IndexError, TypeError):
+                logger.warning("Unexpected Groq response structure: %.200s", resp.text)
+                time.sleep(2 ** attempt)
+                continue
+            try:
+                parsed = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Groq returned invalid JSON in content (attempt %d): %.200s",
+                    attempt + 1, response_text,
+                )
+                time.sleep(2 ** attempt)
+                continue
             return parsed
-        except (json.JSONDecodeError, KeyError, requests.RequestException) as e:
+        except requests.HTTPError as e:
+            status = e.response.status_code
+            try:
+                body_preview = e.response.text[:500]
+            except Exception:
+                body_preview = "<unreadable>"
+            logger.warning(
+                "Groq request failed (attempt %d): status=%d, body=%.200s",
+                attempt + 1, status, body_preview,
+            )
+            if status == 429:
+                retry_after = int(e.response.headers.get("retry-after", 4))
+                logger.warning(
+                    "Rate limited, waiting %ds...", retry_after,
+                )
+                time.sleep(retry_after)
+                continue
             if attempt < 2:
                 logger.warning(
-                    "Groq request failed (attempt %d, retrying): %s",
-                    attempt + 1, e,
+                    "Retrying after %ds...", 2 ** attempt,
                 )
                 time.sleep(2 ** attempt)
                 continue
             logger.warning(
-                "Failed to parse Groq response after 3 attempts: %s", e
+                "Failed after 3 attempts (status %d): %s", status, body_preview,
             )
             return {
                 "is_valid": False,
@@ -99,7 +122,7 @@ def validate_sentence(
                 "pinyin_errors": "",
                 "translation_errors": "",
                 "key_word": "",
-                "notes": f"Validation error: {e}",
+                "notes": f"Validation error (HTTP {status}): {body_preview[:200]}",
             }
 
 
