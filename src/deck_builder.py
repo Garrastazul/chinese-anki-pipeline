@@ -22,11 +22,11 @@ body { font-size: 24px; text-align: center; font-family: 'Noto Sans SC', 'Noto S
 .pinyin-word { color: #666; font-size: 14px; line-height: 1.3; }
 .translation { color: #444; font-size: 16px; }
 .wiki-link { font-size: 14px; }
-.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: #f0f0f0; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
-.word-tile:hover { background: #e0e0e0; }
-.word-tile.selected { border-color: #2196F3; background: #e3f2fd; }
-#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: #fff; }
-#check-btn:hover { background: #f5f5f5; }
+.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: transparent; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
+.word-tile:hover { background: transparent; }
+.word-tile.selected { border-color: #faa11b; background: transparent; }
+#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: transparent; }
+#check-btn:hover { background: transparent; }
 .correct { color: #2e7d32; font-weight: bold; font-size: 18px; }
 .incorrect { color: #c62828; font-weight: bold; font-size: 18px; }
 .reorder-help { color: #888; font-size: 14px; margin-top: 12px; }
