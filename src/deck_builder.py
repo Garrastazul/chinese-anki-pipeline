@@ -16,26 +16,54 @@ logger = logging.getLogger(__name__)
 _CSS = """
 body { font-size: 24px; text-align: center; font-family: 'Noto Sans SC', 'Noto Sans', 'Microsoft YaHei', 'SimHei', 'WenQuanYi Micro Hei', sans-serif; }
 .pinyin { color: #666; font-size: 18px; }
+.word-pairs { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 8px; }
+.word-pair { display: flex; flex-direction: column; align-items: center; }
+.hanzi-word { font-size: 24px; }
+.pinyin-word { color: #666; font-size: 14px; line-height: 1.3; }
 .translation { color: #444; font-size: 16px; }
 .wiki-link { font-size: 14px; }
-.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: transparent; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
-.word-tile:hover { background: transparent; }
-.word-tile.selected { border-color: #faa11b; background: transparent; }
-#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: transparent; }
-#check-btn:hover { background: transparent; }
+.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: #f0f0f0; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
+.word-tile:hover { background: #e0e0e0; }
+.word-tile.selected { border-color: #2196F3; background: #e3f2fd; }
+#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: #fff; }
+#check-btn:hover { background: #f5f5f5; }
 .correct { color: #2e7d32; font-weight: bold; font-size: 18px; }
 .incorrect { color: #c62828; font-weight: bold; font-size: 18px; }
 .reorder-help { color: #888; font-size: 14px; margin-top: 12px; }
 """
 
 
+def _build_word_pinyin_html(hanzi: str, pinyin_str: str) -> str:
+    """Build HTML where each hanzi word has its pinyin below it."""
+    clean = hanzi.replace(" ", "")
+    if not clean:
+        return ""
+    words = list(jieba.lcut(clean))
+    tokens = pinyin_str.split()
+    if len(words) != len(tokens):
+        return f'<span class="pinyin">{pinyin_str}</span>'
+    parts = []
+    for word, py in zip(words, tokens):
+        if word == py:
+            parts.append(f'<span class="hanzi-word">{word}</span>')
+        else:
+            parts.append(
+                f'<div class="word-pair">'
+                f'<span class="hanzi-word">{word}</span>'
+                f'<span class="pinyin-word">{py}</span>'
+                f'</div>'
+            )
+    return f'<div class="word-pairs">{"".join(parts)}</div>'
+
+
 def create_models() -> dict[str, genanki.Model]:
     m1 = genanki.Model(
-        1607392319,
+        1607392328,
         "Hanzi->Full",
         fields=[
             {"name": "Hanzi"},
             {"name": "Pinyin"},
+            {"name": "PinyinHtml"},
             {"name": "Translation"},
             {"name": "AudioField"},
             {"name": "GrammarPoint"},
@@ -45,19 +73,20 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 1",
                 "qfmt": "{{Hanzi}}<br>{{AudioField}}",
-                "afmt": '{{Hanzi}}<br><br>{{Pinyin}}<br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+                "afmt": '{{{PinyinHtml}}}<br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
     )
 
     m2 = genanki.Model(
-        1607392320,
+        1607392329,
         "EN->Hanzi",
         fields=[
             {"name": "Translation"},
             {"name": "Hanzi"},
             {"name": "Pinyin"},
+            {"name": "PinyinHtml"},
             {"name": "AudioField"},
             {"name": "GrammarPoint"},
             {"name": "WikiUrl"},
@@ -66,7 +95,7 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 2",
                 "qfmt": "{{Translation}}",
-                "afmt": '{{Translation}}<br><br>{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+                "afmt": '{{Translation}}<br><br>{{{PinyinHtml}}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
@@ -97,25 +126,25 @@ def create_models() -> dict[str, genanki.Model]:
     )
 
     m4 = genanki.Model(
-        1607392323,
-        "Reorder",
-        fields=[
-            {"name": "Scrambled"},
-            {"name": "Hanzi"},
-            {"name": "Pinyin"},
-            {"name": "Translation"},
-            {"name": "AudioField"},
-            {"name": "WikiUrl"},
-            {"name": "GrammarPoint"},
-        ],
-        templates=[
-            {
-                "name": "Card 4",
-                "qfmt": """<div id="scrambled-data" style="display:none">{{Scrambled}}</div>
+    1607392332,          # ← ID nuevo para que Anki acepte el template actualizado
+    "Reorder",
+    fields=[
+        {"name": "Scrambled"},
+        {"name": "Hanzi"},
+        {"name": "Pinyin"},
+        {"name": "Translation"},
+        {"name": "AudioField"},
+        {"name": "WikiUrl"},
+        {"name": "GrammarPoint"},
+    ],
+    templates=[
+        {
+            "name": "Card 4",
+            "qfmt": """<div id="scrambled-data" style="display:none">{{Scrambled}}</div>
 <div id="data-hanzi" style="display:none">{{Hanzi}}</div>
 <div id="data-pinyin" style="display:none">{{Pinyin}}</div>
 <div id="data-translation" style="display:none">{{Translation}}</div>
-<script>var audioFile = '{{AudioField}}';</script>
+<div id="data-audio" style="display:none">{{AudioField}}</div>
 <div id="data-wikiurl" style="display:none">{{WikiUrl}}</div>
 <div id="data-grammar" style="display:none">{{GrammarPoint}}</div>
 <div id="reorder-app">
@@ -123,7 +152,7 @@ def create_models() -> dict[str, genanki.Model]:
 <div id="word-container"></div>
 <p><button id="check-btn">Verificar</button></p>
 <p id="result-msg"></p>
-<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background:transparent;"></div>
+<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background:#fafafa;"></div>
 </div>
 <script>
 (function() {
@@ -131,7 +160,7 @@ var words = document.getElementById('scrambled-data').textContent.split(' · ');
 var hanzi = document.getElementById('data-hanzi').textContent;
 var pinyin = document.getElementById('data-pinyin').textContent;
 var translation = document.getElementById('data-translation').textContent;
-var audio = audioFile;
+var audio = document.getElementById('data-audio').textContent;
 var wikiUrl = document.getElementById('data-wikiurl').textContent;
 var grammar = document.getElementById('data-grammar').textContent;
 var correct = hanzi.replace(/ /g, '');
@@ -167,10 +196,8 @@ function onTileClick(i) {
 }
 
 function showAnswer() {
-  answerBox.innerHTML = hanzi + '<br><span class=\"pinyin\">' + pinyin + '</span><br><br>' + translation + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
+  answerBox.innerHTML = hanzi + '<br><span class=\"pinyin\">' + pinyin + '</span><br><br>' + translation + '<br><br>' + audio + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
   answerBox.style.display = 'block';
-  var filename = audio.replace('[sound:', '').replace(']', '');
-  if (filename) { pycmd(\"play:\" + filename); }
 }
 
 function checkOrder() {
@@ -190,11 +217,11 @@ document.getElementById('check-btn').addEventListener('click', checkOrder);
 render();
 })();
 </script>""",
-                "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
-            }
-        ],
-        css=_CSS,
-    )
+            "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+        }
+    ],
+    css=_CSS,
+)
 
     return {"hanzi_full": m1, "en_hanzi": m2, "cloze": m3, "reorder": m4}
 
@@ -336,6 +363,7 @@ def _build_hanzi_full_card(
         fields=[
             sentence.hanzi,
             sentence.pinyin,
+            _build_word_pinyin_html(sentence.hanzi, sentence.pinyin),
             sentence.translation,
             audio_field,
             gp.name,
@@ -354,6 +382,7 @@ def _build_en_hanzi_card(
             sentence.translation,
             sentence.hanzi,
             sentence.pinyin,
+            _build_word_pinyin_html(sentence.hanzi, sentence.pinyin),
             audio_field,
             gp.name,
             gp.full_url,
@@ -501,9 +530,13 @@ def build_sentence_cards(
 
 def build_deck(
     level: GrammarLevel,
+    deck_name_prefix: str = "",
 ) -> tuple[genanki.Deck, dict[str, genanki.Model]]:
-    deck_name = get("anki.deck_name_template", "Chinese Grammar - {level}").format(level=level.level)
-    deck_id = int(hash_string(level.level), 16) % 10_000_000_000
+    parent_name = get("anki.parent_deck_name", "")
+    child_name = get("anki.deck_name_template", "{level}").format(level=level.level)
+    full_name = f"{parent_name}::{child_name}" if parent_name else child_name
+    deck_name = f"{deck_name_prefix}{full_name}"
+    deck_id = int(hash_string(deck_name_prefix + level.level), 16) % 10_000_000_000
     deck = genanki.Deck(deck_id, deck_name)
     models = create_models()
     notes = build_sentence_cards(level, models)
@@ -522,11 +555,12 @@ def _get_needed_audio(level: GrammarLevel) -> set[str]:
 
 
 def export_deck(
-    deck: genanki.Deck, models: dict, level: GrammarLevel
+    deck: genanki.Deck, models: dict, level: GrammarLevel,
+    filename_prefix: str = "",
 ) -> Path:
     output_dir = get_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"chinese-grammar-{level.level.lower()}.apkg"
+    filename = f"{filename_prefix}chinese-grammar-{level.level.lower()}.apkg"
     filepath = output_dir / filename
 
     audio_dir = get_audio_dir()
@@ -544,9 +578,9 @@ def export_deck(
     return filepath
 
 
-def build_and_export(level: GrammarLevel) -> Path:
-    deck, models = build_deck(level)
-    return export_deck(deck, models, level)
+def build_and_export(level: GrammarLevel, filename_prefix: str = "", deck_name_prefix: str = "") -> Path:
+    deck, models = build_deck(level, deck_name_prefix=deck_name_prefix)
+    return export_deck(deck, models, level, filename_prefix=filename_prefix)
 
 
 def main() -> None:

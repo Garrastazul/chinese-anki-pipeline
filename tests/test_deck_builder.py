@@ -400,7 +400,7 @@ class TestBuildDeck:
         deck, models = build_deck(sample_level)
         assert isinstance(deck, genanki.Deck)
         assert isinstance(models, dict)
-        assert "Chinese Grammar - A1" in deck.name
+        assert "Grammar chinese wiki::A1" in deck.name
 
 
 class TestExportDeck:
@@ -417,6 +417,28 @@ class TestExportDeck:
                     assert path_arg.endswith(".apkg")
 
 
+class TestExportDeckPrefix:
+    def test_export_with_prefix(self, sample_level, tmp_path):
+        deck, models = build_deck(sample_level)
+        with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
+            with patch("src.deck_builder.get_audio_dir", return_value=tmp_path / "audio"):
+                with patch("genanki.Package.write_to_file") as mock_write:
+                    export_deck(deck, models, sample_level, filename_prefix="test_")
+                    path_arg = mock_write.call_args[0][0]
+                    assert "test_" in path_arg
+                    assert "chinese-grammar-a1" in path_arg.lower()
+
+    def test_export_without_prefix(self, sample_level, tmp_path):
+        deck, models = build_deck(sample_level)
+        with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
+            with patch("src.deck_builder.get_audio_dir", return_value=tmp_path / "audio"):
+                with patch("genanki.Package.write_to_file") as mock_write:
+                    export_deck(deck, models, sample_level)
+                    path_arg = mock_write.call_args[0][0]
+                    assert not path_arg.startswith("test_")
+                    assert "chinese-grammar-a1" in path_arg.lower()
+
+
 class TestBuildAndExport:
     def test_build_and_export_returns_path(self, sample_level, tmp_path):
         with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
@@ -426,3 +448,13 @@ class TestBuildAndExport:
                     result = build_and_export(sample_level)
                     mock_write.assert_called_once()
                     assert result is not None
+
+    def test_build_and_export_with_prefix(self, sample_level, tmp_path):
+        with patch("src.deck_builder.get_output_dir", return_value=tmp_path):
+            with patch("src.deck_builder.get_audio_dir", return_value=tmp_path / "audio"):
+                with patch("genanki.Package.write_to_file") as mock_write:
+                    mock_write.return_value = None
+                    result = build_and_export(sample_level, filename_prefix="test_")
+                    mock_write.assert_called_once()
+                    path_arg = mock_write.call_args[0][0]
+                    assert "test_" in path_arg

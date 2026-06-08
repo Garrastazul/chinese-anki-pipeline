@@ -1,4 +1,5 @@
 import json
+import logging
 import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
@@ -7,7 +8,7 @@ from bs4 import BeautifulSoup
 from src.scraper import (
     fetch_page, fetch_grammar_point_page, parse_grammar_point_links,
     parse_example_sentences, _extract_hanzi, _extract_pinyin,
-    scrape_level, save_level_data, load_level_data,
+    scrape_level, save_level_data, load_level_data, validate_page_structure,
 )
 from src.models import GrammarLevel, GrammarPoint, ExampleSentence
 
@@ -299,6 +300,29 @@ class TestSaveLoadRoundtrip:
             assert "level" in data
             assert "grammar_points" in data
 
+    def test_save_with_suffix_uses_correct_path(self, sample_level, tmp_path):
+        with patch("src.scraper.get_data_processed_dir", return_value=tmp_path):
+            save_level_data(sample_level, suffix="-test")
+            json_path = tmp_path / "A1-test.json"
+            assert json_path.exists()
+            assert not (tmp_path / "A1.json").exists()
+
+    def test_save_and_load_with_suffix_roundtrip(self, sample_level, tmp_path):
+        with patch("src.scraper.get_data_processed_dir", return_value=tmp_path):
+            save_level_data(sample_level, suffix="-test")
+            loaded = load_level_data("A1", suffix="-test")
+
+        assert loaded.level == sample_level.level
+        assert len(loaded.grammar_points) == len(sample_level.grammar_points)
+        assert loaded.grammar_points[0].name == sample_level.grammar_points[0].name
+        assert loaded.grammar_points[0].sentences[0].hanzi == sample_level.grammar_points[0].sentences[0].hanzi
+
+    def test_load_without_suffix_does_not_find_suffixed(self, sample_level, tmp_path):
+        with patch("src.scraper.get_data_processed_dir", return_value=tmp_path):
+            save_level_data(sample_level, suffix="-test")
+            with pytest.raises(FileNotFoundError):
+                load_level_data("A1")
+
 
 class TestScrapeLevel:
     @patch("src.scraper.fetch_page")
@@ -357,4 +381,244 @@ class TestScrapeLevel:
         assert level.grammar_points[0].sentences[0].hanzi == "我 爱 你。"
         assert level.grammar_points[0].sentences[0].pinyin == "Wǒ ài nǐ."
         assert level.grammar_points[0].sentences[0].translation == "I love you."
+
+
+class TestScrapeLevelMaxPoints:
+    @patch("src.scraper.fetch_page")
+    @patch("src.scraper.fetch_grammar_point_page")
+    @patch("src.scraper.time.sleep")
+    def test_max_points_limits_number_of_points(self, mock_sleep, mock_fetch_point, mock_fetch):
+        rows = ""
+        for i in range(5):
+            rows += (
+                f'<tr><td><a href="/chinese/grammar/ASG{i}">Point {i}</a></td>'
+                f'<td>Pattern {i}</td>'
+                f'<td><span class="liju">例句</span></td></tr>'
+            )
+        mock_fetch.return_value = (
+            f'<html><table class="wikitable">'
+            f'<tr><th>GP</th><th>Pattern</th><th>Ex</th></tr>'
+            f'{rows}</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><table class="table-bordered">'
+            '<tr><td>好 <span class="pinyin">hǎo</span></td><td>good</td></tr>'
+            '</table></html>'
+        )
+        level = scrape_level("A1", max_points=3)
+        assert len(level.grammar_points) == 3
+
+    @patch("src.scraper.fetch_page")
+    @patch("src.scraper.fetch_grammar_point_page")
+    @patch("src.scraper.time.sleep")
+    def test_max_points_none_returns_all(self, mock_sleep, mock_fetch_point, mock_fetch):
+        rows = ""
+        for i in range(5):
+            rows += (
+                f'<tr><td><a href="/chinese/grammar/ASG{i}">Point {i}</a></td>'
+                f'<td>Pattern {i}</td>'
+                f'<td><span class="liju">例句</span></td></tr>'
+            )
+        mock_fetch.return_value = (
+            f'<html><table class="wikitable">'
+            f'<tr><th>GP</th><th>Pattern</th><th>Ex</th></tr>'
+            f'{rows}</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><table class="table-bordered">'
+            '<tr><td>好 <span class="pinyin">hǎo</span></td><td>good</td></tr>'
+            '</table></html>'
+        )
+        level = scrape_level("A1")
+        assert len(level.grammar_points) == 5
+
+
+class TestScrapeLevelMaxSentences:
+    @patch("src.scraper.fetch_page")
+    @patch("src.scraper.fetch_grammar_point_page")
+    @patch("src.scraper.time.sleep")
+    def test_max_sentences_truncates(self, mock_sleep, mock_fetch_point, mock_fetch):
+        mock_fetch.return_value = (
+            '<html><table class="wikitable">'
+            '<tr><th>GP</th><th>Pattern</th><th>Ex</th></tr>'
+            '<tr><td><a href="/chinese/grammar/ASG">Point</a></td>'
+            '<td>Pattern</td>'
+            '<td><span class="liju">例句</span></td></tr>'
+            '</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><div class="liju"><ul>'
+            '<li>好<span class="pinyin">hǎo</span><span class="trans">good</span></li>'
+            '<li>坏<span class="pinyin">huài</span><span class="trans">bad</span></li>'
+            '<li>大<span class="pinyin">dà</span><span class="trans">big</span></li>'
+            '</ul></div></html>'
+        )
+        level = scrape_level("A1", max_sentences=2)
+        assert len(level.grammar_points) == 1
+        assert len(level.grammar_points[0].sentences) == 2
+
+    @patch("src.scraper.fetch_page")
+    @patch("src.scraper.fetch_grammar_point_page")
+    @patch("src.scraper.time.sleep")
+    def test_max_sentences_none_returns_all(self, mock_sleep, mock_fetch_point, mock_fetch):
+        mock_fetch.return_value = (
+            '<html><table class="wikitable">'
+            '<tr><th>GP</th><th>Pattern</th><th>Ex</th></tr>'
+            '<tr><td><a href="/chinese/grammar/ASG">Point</a></td>'
+            '<td>Pattern</td>'
+            '<td><span class="liju">例句</span></td></tr>'
+            '</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><div class="liju"><ul>'
+            '<li>好<span class="pinyin">hǎo</span><span class="trans">good</span></li>'
+            '<li>坏<span class="pinyin">huài</span><span class="trans">bad</span></li>'
+            '<li>大<span class="pinyin">dà</span><span class="trans">big</span></li>'
+            '</ul></div></html>'
+        )
+        level = scrape_level("A1")
+        assert len(level.grammar_points) == 1
+        assert len(level.grammar_points[0].sentences) == 3
+
+    @patch("src.scraper.fetch_page")
+    @patch("src.scraper.fetch_grammar_point_page")
+    @patch("src.scraper.time.sleep")
+    def test_max_points_and_max_sentences_combine(self, mock_sleep, mock_fetch_point, mock_fetch):
+        rows = ""
+        for i in range(3):
+            rows += (
+                f'<tr><td><a href="/chinese/grammar/ASG{i}">Point {i}</a></td>'
+                f'<td>Pattern {i}</td>'
+                f'<td><span class="liju">例句</span></td></tr>'
+            )
+        mock_fetch.return_value = (
+            f'<html><table class="wikitable">'
+            f'<tr><th>GP</th><th>Pattern</th><th>Ex</th></tr>'
+            f'{rows}</table></html>'
+        )
+        mock_fetch_point.return_value = (
+            '<html><div class="liju"><ul>'
+            '<li>好<span class="pinyin">hǎo</span><span class="trans">good</span></li>'
+            '<li>坏<span class="pinyin">huài</span><span class="trans">bad</span></li>'
+            '</ul></div></html>'
+        )
+        level = scrape_level("A1", max_points=2, max_sentences=1)
+        assert len(level.grammar_points) == 2
+        for gp in level.grammar_points:
+            assert len(gp.sentences) == 1
+
+
+class TestParseGrammarPointLinksResilience:
+    def test_parse_links_no_wikitable_class(self, index_no_wikitable_html):
+        if not index_no_wikitable_html:
+            pytest.skip("No fixture")
+        links = parse_grammar_point_links(index_no_wikitable_html)
+        assert len(links) >= 2
+        assert links[0]["name"] == "Basic sentence order"
+        assert links[0]["url_slug"] == "ASGETNCO"
+
+    def test_parse_links_shuffled_columns(self, index_shuffled_html):
+        if not index_shuffled_html:
+            pytest.skip("No fixture")
+        links = parse_grammar_point_links(index_shuffled_html)
+        assert len(links) >= 2
+        assert links[0]["name"] == "Basic sentence order"
+        assert links[0]["url_slug"] == "ASGETNCO"
+        assert links[1]["name"] == 'Expressing possession with "de"'
+
+
+class TestParseExampleSentencesResilience:
+    def test_parse_liju_alt_class(self, grammar_liju_alt_html):
+        if not grammar_liju_alt_html:
+            pytest.skip("No fixture")
+        sentences = parse_example_sentences(grammar_liju_alt_html)
+        assert len(sentences) == 2
+        assert sentences[0]["hanzi"] == "我 爱 你。"
+        assert sentences[0]["translation"] == "I love you."
+
+    def test_parse_no_liju_table_only(self, grammar_no_liju_html):
+        if not grammar_no_liju_html:
+            pytest.skip("No fixture")
+        sentences = parse_example_sentences(grammar_no_liju_html)
+        assert len(sentences) >= 2
+        assert sentences[0]["hanzi"] == "我 爱 你。"
+        assert sentences[0]["translation"] == "I love you."
+
+    def test_parse_pinyin_as_py_class(self, grammar_py_class_html):
+        if not grammar_py_class_html:
+            pytest.skip("No fixture")
+        sentences = parse_example_sentences(grammar_py_class_html)
+        assert len(sentences) == 2
+        assert sentences[0]["pinyin"] == "Wǒ ài nǐ."
+        assert sentences[0]["translation"] == "I love you."
+
+    def test_parse_trans_in_last_td(self, grammar_trans_last_td_html):
+        if not grammar_trans_last_td_html:
+            pytest.skip("No fixture")
+        sentences = parse_example_sentences(grammar_trans_last_td_html)
+        assert len(sentences) == 2
+        assert "我爱" in sentences[0]["hanzi"].replace(" ", "")
+        assert sentences[0]["translation"] == "I love you."
+
+
+class TestExtractHanziResilience:
+    def test_extract_hanzi_with_py_class(self):
+        html = '<td>你好 <span class="py">Nǐ hǎo</span></td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+        assert _extract_hanzi(cell) == "你好"
+
+    def test_extract_hanzi_with_romanization_class(self):
+        html = '<td>你好 <span class="romanization">Nǐ hǎo</span></td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+        assert _extract_hanzi(cell) == "你好"
+
+    def test_extract_hanzi_with_nested_pinyin(self):
+        html = '<td><span>你好</span> <span class="pinyin">Nǐ hǎo</span></td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+        result = _extract_hanzi(cell)
+        assert "你好" in result
+        assert "Nǐ" not in result
+
+
+class TestExtractPinyinResilience:
+    def test_extract_pinyin_py_class(self):
+        html = '<td>你好 <span class="py">Nǐ hǎo</span></td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+        assert _extract_pinyin(cell) == "Nǐ hǎo"
+
+    def test_extract_pinyin_romanization_class(self):
+        html = '<td>你好 <span class="romanization">Nǐ hǎo</span></td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+        assert _extract_pinyin(cell) == "Nǐ hǎo"
+
+
+class TestValidatePageStructure:
+    def test_valid_index_no_warning(self, sample_index_html, caplog):
+        if not sample_index_html:
+            pytest.skip("No fixture")
+        caplog.set_level(logging.WARNING)
+        validate_page_structure(sample_index_html, page_type="index")
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        index_warnings = [w for w in warnings if "index" in w.getMessage().lower()]
+        assert len(index_warnings) == 0
+
+    def test_invalid_index_no_tables(self, caplog):
+        caplog.set_level(logging.WARNING)
+        validate_page_structure("<html><p>no table</p></html>", page_type="index")
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("no tables" in w.getMessage().lower() for w in warnings)
+
+    def test_valid_grammar_no_warning(self, sample_grammar_html, caplog):
+        if not sample_grammar_html:
+            pytest.skip("No fixture")
+        caplog.set_level(logging.WARNING)
+        validate_page_structure(sample_grammar_html, page_type="grammar")
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        grammar_warnings = [w for w in warnings if "grammar page" in w.getMessage().lower() or "liju" in w.getMessage().lower()]
+        assert len(grammar_warnings) == 0
 

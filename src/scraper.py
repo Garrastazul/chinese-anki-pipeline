@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -14,8 +16,53 @@ from src.utils import get_data_processed_dir
 
 logger = logging.getLogger(__name__)
 
+PINYIN_CLASS_PATTERNS = ["pinyin", "py", "romanization"]
+
+_DEFAULT_SELECTORS: dict[str, list[str]] = {
+    "index_table": ["table.wikitable", "table.sortable", "table"],
+    "liju_block": ["div.liju", "[class*=liju]"],
+    "pinyin_span": ["span.pinyin", "span.py", "span.romanization", "[class*=pinyin]"],
+    "translation_span": ["span.trans", "span.translation", "span.english", "[class*=trans]"],
+    "example_table": ["table.table-bordered", "table.big-text", "table.wikitable", "table"],
+}
+
+
 def _get_base_url() -> str:
     return get("scraper.base_url", "https://resources.allsetlearning.com/chinese/grammar")
+
+
+def _get_selectors(key: str) -> list[str]:
+    return get(f"scraper.selectors.{key}", _DEFAULT_SELECTORS.get(key, []))
+
+
+def _select_first(soup: BeautifulSoup | Tag, selectors: list[str], label: str) -> list[Tag]:
+    for i, sel in enumerate(selectors):
+        found = soup.select(sel)
+        if found:
+            if i > 0:
+                logger.warning("Wiki structure may have changed: using fallback selector '%s' for %s (preferred: '%s')", sel, label, selectors[0])
+            return found
+    return []
+
+
+def _is_pinyin_tag(tag: Tag | None) -> bool:
+    if tag is None:
+        return False
+    classes = tag.get("class", [])
+    return any(cls in PINYIN_CLASS_PATTERNS for cls in classes)
+
+
+def _has_pinyin_ancestor(text_node: str, parent: Tag | None) -> bool:
+    if parent is None:
+        return False
+    return any(_is_pinyin_tag(a) for a in [parent] + list(parent.parents) if isinstance(a, Tag))
+
+
+def fetch_page(url: str) -> str:
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
 
 HEADERS = {
     "User-Agent": (
@@ -25,41 +72,140 @@ HEADERS = {
     ),
 }
 
+_PATTERN_KEYWORDS = ["Subj", "Verb", "Obj", "Adj", "N", "NP", "VP", "Prep", "Num", "M", "Cl", "S", "O", "+", "。", "？"]
 
-def fetch_page(url: str) -> str:
-    resp = requests.get(url, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
-    return resp.text
+_CHINESE_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf]")
+
+
+def _is_pattern_cell(text: str) -> bool:
+    if len(text) < 2:
+        return False
+    has_chinese = bool(_CHINESE_RE.search(text))
+    has_keyword = any(kw in text for kw in _PATTERN_KEYWORDS)
+    return has_chinese or has_keyword
+
+
+def _is_translation_cell(cell: Tag) -> bool:
+    text = cell.get_text(strip=True)
+    if not text:
+        return False
+    if _CHINESE_RE.search(text):
+        return False
+    if cell.select_one("span.pinyin, span.py, span.romanization"):
+        return False
+    non_ascii = sum(1 for c in text if ord(c) > 127)
+    return non_ascii / max(len(text), 1) < 0.1
+
+
+def validate_page_structure(html: str, page_type: str = "index") -> None:
+    soup = BeautifulSoup(html, "lxml")
+    if page_type == "index":
+        tables = _select_first(soup, _get_selectors("index_table"), "index table")
+        if not tables:
+            logger.warning("No tables found in grammar index page – wiki layout may have changed")
+        else:
+            rows = tables[0].select("tr")
+            data_rows = [r for r in rows if r.find_all("td")]
+            if len(data_rows) == 0:
+                logger.warning("Index table has no data rows – wiki structure may have changed")
+    elif page_type == "grammar":
+        liju_blocks = _select_first(soup, _get_selectors("liju_block"), "liju block")
+        tables = _select_first(soup, _get_selectors("example_table"), "example table")
+        if not liju_blocks and not tables:
+            logger.warning("No liju blocks or example tables found in grammar page – wiki layout may have changed")
+
+
+def _try_extract_gp_standard(cells: list[Tag]) -> dict | None:
+    if len(cells) < 3:
+        return None
+    anchor = cells[0].find("a")
+    if not anchor:
+        return None
+    name = anchor.get_text(strip=True)
+    if not name:
+        return None
+    href = anchor.get("href", "")
+    if not href:
+        return None
+    url_slug = href.rstrip("/").split("/")[-1]
+    pattern = cells[1].get_text(strip=True)
+    liju_span = cells[2].select_one("span.liju")
+    examples_raw = liju_span.get_text(strip=True) if liju_span else cells[2].get_text(strip=True)
+    return {
+        "name": name,
+        "url_slug": url_slug,
+        "pattern": pattern,
+        "examples_raw": examples_raw,
+    }
+
+
+def _try_extract_gp_heuristic(cells: list[Tag]) -> dict | None:
+    name_cell = None
+    pattern_cell = None
+    example_cell = None
+    for cell in cells:
+        anchor = cell.find("a")
+        if anchor and anchor.get("href", "").rstrip("/").split("/")[-1]:
+            name_cell = cell
+            continue
+    if name_cell is None:
+        return None
+    anchor = name_cell.find("a")
+    name = anchor.get_text(strip=True) if anchor else ""
+    if not name:
+        return None
+    href = anchor.get("href", "") if anchor else ""
+    if not href:
+        return None
+    url_slug = href.rstrip("/").split("/")[-1]
+    remaining = [c for c in cells if c != name_cell]
+    for cell in remaining:
+        text = cell.get_text(strip=True)
+        if _is_pattern_cell(text):
+            pattern_cell = cell
+            break
+    for cell in remaining:
+        if cell == pattern_cell:
+            continue
+        if cell.select_one("span.liju, span.trans, span.pinyin"):
+            example_cell = cell
+            break
+    if example_cell is None:
+        for cell in remaining:
+            if cell == pattern_cell:
+                continue
+            text = cell.get_text(strip=True)
+            if _CHINESE_RE.search(text):
+                example_cell = cell
+                break
+    pattern = pattern_cell.get_text(strip=True) if pattern_cell else ""
+    examples_raw = example_cell.get_text(strip=True) if example_cell else ""
+    return {
+        "name": name,
+        "url_slug": url_slug,
+        "pattern": pattern,
+        "examples_raw": examples_raw,
+    }
 
 
 def parse_grammar_point_links(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     result: list[dict] = []
-    for table in soup.select("table.wikitable"):
+    selectors = _get_selectors("index_table")
+    tables = _select_first(soup, selectors, "index table")
+    for table in tables:
         rows = table.select("tr")
         for row in rows:
             cells = row.find_all("td", recursive=False)
-            if len(cells) < 3:
+            if not cells:
                 continue
-            anchor = cells[0].find("a")
-            if not anchor:
-                continue
-            name = anchor.get_text(strip=True)
-            if not name:
-                continue
-            href = anchor.get("href", "")
-            if not href:
-                continue
-            url_slug = href.rstrip("/").split("/")[-1]
-            pattern = cells[1].get_text(strip=True)
-            liju_span = cells[2].select_one("span.liju")
-            examples_raw = liju_span.get_text(strip=True) if liju_span else cells[2].get_text(strip=True)
-            result.append({
-                "name": name,
-                "url_slug": url_slug,
-                "pattern": pattern,
-                "examples_raw": examples_raw,
-            })
+            gp = _try_extract_gp_standard(cells)
+            if gp is None:
+                gp = _try_extract_gp_heuristic(cells)
+            if gp is not None:
+                result.append(gp)
+    if not result:
+        logger.warning("No grammar point links extracted – wiki structure may have changed")
     return result
 
 
@@ -75,11 +221,7 @@ def _extract_hanzi(cell: Tag) -> str:
     for t in cell.find_all(string=True, recursive=True):
         parent = t.parent
         if isinstance(parent, Tag):
-            ancestors = parent.parents
-            if any(
-                isinstance(a, Tag) and a.get("class") and "pinyin" in a.get("class", [])
-                for a in [parent] + list(ancestors)
-            ):
+            if any(_is_pinyin_tag(a) for a in [parent] + list(parent.parents) if isinstance(a, Tag)):
                 continue
         stripped = t.strip()
         if stripped:
@@ -88,50 +230,62 @@ def _extract_hanzi(cell: Tag) -> str:
 
 
 def _extract_pinyin(cell: Tag) -> str:
-    spans = cell.select("span.pinyin")
-    return " ".join(s.get_text(strip=True) for s in spans)
+    spans = cell.find_all(["span"], class_=lambda c: c and any(cls in c.split() for cls in PINYIN_CLASS_PATTERNS) if c else False)
+    if not spans:
+        spans = cell.select("[class*=pinyin], [class*=py], [class*=romanization]")
+    return " ".join(s.get_text(strip=True) for s in spans if isinstance(s, Tag))
 
 
-def parse_example_sentences(html: str) -> list[dict]:
-    soup = BeautifulSoup(html, "lxml")
+def _parse_liju_examples(soup: BeautifulSoup) -> list[dict] | None:
+    liju_selectors = _get_selectors("liju_block")
+    liju_divs = _select_first(soup, liju_selectors, "liju block")
+    if not liju_divs:
+        return None
 
-    liju_divs = soup.select("div.liju")
-    if liju_divs:
-        sentences: list[dict] = []
-        for div in liju_divs:
-            for li in div.select("li"):
-                hanzi_parts = []
-                for child in li.children:
-                    if isinstance(child, str):
-                        t = child.strip()
-                        if t:
-                            hanzi_parts.append(t)
-                    elif child.name != "span":
-                        t = child.get_text(strip=True)
-                        if t:
-                            hanzi_parts.append(t)
-                hanzi = " ".join(hanzi_parts)
-                if not hanzi:
-                    continue
-                pinyin_span = li.select_one("span.pinyin")
-                pinyin = pinyin_span.get_text(strip=True) if pinyin_span else ""
-                trans_span = li.select_one("span.trans")
-                translation = trans_span.get_text(strip=True) if trans_span else ""
-                if not translation:
-                    continue
-                sentences.append({
-                    "hanzi": hanzi,
-                    "pinyin": pinyin,
-                    "translation": translation,
-                })
-        if sentences:
-            return sentences
+    pinyin_selectors = _get_selectors("pinyin_span")
+    trans_selectors = _get_selectors("translation_span")
 
-    tables = soup.select("table.table-bordered, table.big-text")
-    if not tables:
-        tables = soup.select("table")
-        if tables:
-            logger.warning("Falling back to generic <table> selector (wiki CSS may have changed)")
+    sentences: list[dict] = []
+    for div in liju_divs:
+        for li in div.select("li"):
+            hanzi_parts = []
+            for child in li.children:
+                if isinstance(child, str):
+                    t = child.strip()
+                    if t:
+                        hanzi_parts.append(t)
+                elif child.name != "span":
+                    t = child.get_text(strip=True)
+                    if t:
+                        hanzi_parts.append(t)
+            hanzi = " ".join(hanzi_parts)
+            if not hanzi:
+                continue
+
+            pinyin = ""
+            pinyin_spans = _select_first(li, pinyin_selectors, "pinyin span")
+            if pinyin_spans:
+                pinyin = " ".join(s.get_text(strip=True) for s in pinyin_spans)
+
+            translation = ""
+            trans_spans = _select_first(li, trans_selectors, "translation span")
+            if trans_spans:
+                translation = trans_spans[0].get_text(strip=True)
+
+            if not translation:
+                continue
+            sentences.append({
+                "hanzi": hanzi,
+                "pinyin": pinyin,
+                "translation": translation,
+            })
+    return sentences if sentences else None
+
+
+def _parse_table_examples(soup: BeautifulSoup) -> list[dict]:
+    table_selectors = _get_selectors("example_table")
+    tables = _select_first(soup, table_selectors, "example table")
+
     sentences = []
     for table in tables:
         rows = table.select("tr")
@@ -139,20 +293,34 @@ def parse_example_sentences(html: str) -> list[dict]:
             cells = row.select("td")
             if len(cells) < 2:
                 continue
+
+            trans_cell = None
+            content_cells = []
+            for cell in cells:
+                if _is_translation_cell(cell):
+                    trans_cell = cell
+                else:
+                    content_cells.append(cell)
+
+            if trans_cell is None:
+                content_cells = cells[:-1]
+                trans_cell = cells[-1]
+
             hanzi_parts = []
             pinyin_parts = []
-            for cell in cells[:-1]:
+            for cell in content_cells:
                 h = _extract_hanzi(cell)
                 if h:
                     hanzi_parts.append(h)
                 p = _extract_pinyin(cell)
                 if p:
                     pinyin_parts.append(p)
+
             hanzi = " ".join(hanzi_parts)
             if not hanzi:
                 continue
             pinyin = " ".join(pinyin_parts)
-            translation = cells[-1].get_text(strip=True)
+            translation = trans_cell.get_text(strip=True)
             sentences.append({
                 "hanzi": hanzi,
                 "pinyin": pinyin,
@@ -161,7 +329,51 @@ def parse_example_sentences(html: str) -> list[dict]:
     return sentences
 
 
-def scrape_level(level: str) -> GrammarLevel:
+def parse_example_sentences(html: str) -> list[dict]:
+    soup = BeautifulSoup(html, "lxml")
+    validate_page_structure(html, page_type="grammar")
+
+    sentences = _parse_liju_examples(soup)
+    if sentences is not None:
+        return sentences
+
+    return _parse_table_examples(soup)
+
+
+def _fetch_single_point(link: dict, level: str, max_sentences: int | None) -> GrammarPoint | None:
+    url_slug = link["url_slug"]
+    full_url = f"{_get_base_url()}/{url_slug}"
+    try:
+        point_html = fetch_grammar_point_page(url_slug)
+        raw_sentences = parse_example_sentences(point_html)
+        if max_sentences is not None:
+            raw_sentences = raw_sentences[:max_sentences]
+        sentences = [
+            ExampleSentence(
+                hanzi=s["hanzi"],
+                pinyin=s["pinyin"],
+                translation=s["translation"],
+            )
+            for s in raw_sentences
+        ]
+        gp = GrammarPoint(
+            name=link["name"],
+            level=level,
+            url_slug=url_slug,
+            full_url=full_url,
+            pattern=link.get("pattern", ""),
+            sentences=sentences,
+        )
+        logger.info("  %s: %d sentences", link["name"], len(sentences))
+        return gp
+    except (requests.RequestException, ValueError, TypeError, KeyError, AttributeError):
+        logger.warning("Failed to fetch %s (%s), skipping", link["name"], full_url, exc_info=True)
+        return None
+    finally:
+        time.sleep(get("scraper.request_delay", 1.0))
+
+
+def scrape_level(level: str, max_points: int | None = None, max_sentences: int | None = None) -> GrammarLevel:
     url = f"{_get_base_url()}/{level}_grammar_points"
     logger.info("Fetching %s grammar points index from %s", level, url)
     try:
@@ -172,40 +384,26 @@ def scrape_level(level: str) -> GrammarLevel:
     links = parse_grammar_point_links(html)
     logger.info("Found %d grammar point links for %s", len(links), level)
 
+    if max_points is not None:
+        links = links[:max_points]
+
     grammar_points: list[GrammarPoint] = []
-    for link in links:
-        url_slug = link["url_slug"]
-        full_url = f"{_get_base_url()}/{url_slug}"
-        try:
-            point_html = fetch_grammar_point_page(url_slug)
-            raw_sentences = parse_example_sentences(point_html)
-            sentences = [
-                ExampleSentence(
-                    hanzi=s["hanzi"],
-                    pinyin=s["pinyin"],
-                    translation=s["translation"],
-                )
-                for s in raw_sentences
-            ]
-            gp = GrammarPoint(
-                name=link["name"],
-                level=level,
-                url_slug=url_slug,
-                full_url=full_url,
-                pattern=link.get("pattern", ""),
-                sentences=sentences,
-            )
-            grammar_points.append(gp)
-            logger.info("  %s: %d sentences", link["name"], len(sentences))
-        except (requests.RequestException, ValueError, TypeError, KeyError, AttributeError):
-            logger.warning("Failed to fetch %s (%s), skipping", link["name"], full_url, exc_info=True)
-        time.sleep(get("scraper.request_delay", 1.0))
+    max_workers = get("scraper.max_workers", 5)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(_fetch_single_point, link, level, max_sentences): link
+            for link in links
+        }
+        for future in as_completed(futures):
+            gp = future.result()
+            if gp is not None:
+                grammar_points.append(gp)
 
     return GrammarLevel(level=level, grammar_points=grammar_points)
 
 
-def save_level_data(level: GrammarLevel) -> None:
-    path: Path = get_data_processed_dir() / f"{level.level}.json"
+def save_level_data(level: GrammarLevel, suffix: str = "") -> None:
+    path: Path = get_data_processed_dir() / f"{level.level}{suffix}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
 
     def _to_dict(gp: GrammarPoint) -> dict:
@@ -240,8 +438,8 @@ def save_level_data(level: GrammarLevel) -> None:
     logger.info("Saved %s data to %s", level.level, path)
 
 
-def load_level_data(level_name: str) -> GrammarLevel:
-    path: Path = get_data_processed_dir() / f"{level_name}.json"
+def load_level_data(level_name: str, suffix: str = "") -> GrammarLevel:
+    path: Path = get_data_processed_dir() / f"{level_name}{suffix}.json"
     data = json.loads(path.read_text(encoding="utf-8"))
 
     gp_list = data.get("grammar_points", [])

@@ -52,3 +52,39 @@ def sample_grammar_html() -> str:
     path = Path(__file__).parent / "fixtures" / "sample_grammar_page.html"
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
+
+@pytest.fixture
+def index_no_wikitable_html() -> str:
+    path = Path(__file__).parent / "fixtures" / "index_no_wikitable_class.html"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+@pytest.fixture
+def index_shuffled_html() -> str:
+    path = Path(__file__).parent / "fixtures" / "index_shuffled_columns.html"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+@pytest.fixture
+def grammar_liju_alt_html() -> str:
+    path = Path(__file__).parent / "fixtures" / "grammar_liju_alt_class.html"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+@pytest.fixture
+def grammar_no_liju_html() -> str:
+    path = Path(__file__).parent / "fixtures" / "grammar_no_liju_table_only.html"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+@pytest.fixture
+def grammar_py_class_html() -> str:
+    path = Path(__file__).parent / "fixtures" / "grammar_pinyin_as_py_class.html"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+@pytest.fixture
+def grammar_trans_last_td_html() -> str:
+    path = Path(__file__).parent / "fixtures" / "grammar_trans_in_last_td.html"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+

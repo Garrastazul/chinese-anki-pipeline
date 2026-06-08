@@ -6,16 +6,25 @@
   },
   "tts": {
     "voice_gender": "male",
-    "rate": "-40%",
+    "rate": "-60%",
     "volume": "+0%",
     "pitch": "-20Hz"
   },
   "anki": {
-    "deck_name_template": "Chinese Grammar - {level}"
+    "parent_deck_name": "Grammar chinese wiki",
+    "deck_name_template": "{level}"
   },
   "scraper": {
     "base_url": "https://resources.allsetlearning.com/chinese/grammar",
-    "request_delay": 1.0
+    "request_delay": 1.0,
+    "max_workers": 5,
+    "selectors": {
+      "index_table": ["table.wikitable", "table.sortable", "table"],
+      "liju_block": ["div.liju", "div.liju-examples", "div.examples", "[class*=liju]"],
+      "pinyin_span": ["span.pinyin", "span.py", "span.romanization", "[class*=pinyin]"],
+      "translation_span": ["span.trans", "span.translation", "span.english", "[class*=trans]"],
+      "example_table": ["table.table-bordered", "table.big-text", "table.wikitable", "table"]
+    }
   },
   "validator": {
     "sentence_delay": 0.5

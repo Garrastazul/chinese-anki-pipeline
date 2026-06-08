@@ -34,7 +34,7 @@ class TestRunPipeline:
         mock_load.return_value = sample_level
         mock_build.return_value = Path("/fake/output.apkg")
         run_pipeline(level_name="A1", skip_scrape=False, skip_validate=False, skip_tts=False)
-        mock_scrape.assert_called_once_with("A1")
+        mock_scrape.assert_called_once_with("A1", max_points=None, max_sentences=None)
         mock_save.assert_called()
         mock_tts.assert_called_once()
         mock_load.assert_not_called()
@@ -76,7 +76,7 @@ class TestRunPipeline:
         mock_load.return_value = sample_level
         mock_build.return_value = Path("/fake/output.apkg")
         run_pipeline(all_levels=True)
-        mock_scrape.assert_called_once_with("A1")
+        mock_scrape.assert_called_once_with("A1", max_points=None, max_sentences=None)
         mock_save.assert_called()
         mock_tts.assert_called_once()
         mock_build.assert_called_once()
@@ -115,3 +115,132 @@ class TestRunPipeline:
                 call_args = mock_logger.warning.call_args[0]
                 assert "B2" in str(call_args)
                 assert "A1" in str(call_args)
+
+
+class TestRunPipelineTestMode:
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_skips_validate(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        with patch("src.main.validator.validate_level") as mock_validate:
+            with patch("src.main.tts_generator.generate_level_audio") as mock_tts:
+                run_pipeline(level_name="A1", test_mode=True)
+                mock_validate.assert_not_called()
+                mock_tts.assert_called_once()
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_runs_tts(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        with patch("src.main.tts_generator.generate_level_audio") as mock_tts:
+            run_pipeline(level_name="A1", test_mode=True)
+            mock_tts.assert_called_once()
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_passes_max_sentences_to_scraper(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=True)
+        mock_scrape.assert_called_once_with("A1", max_points=5, max_sentences=2)
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_with_max_points_override(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=True, max_points=10)
+        mock_scrape.assert_called_once_with("A1", max_points=10, max_sentences=2)
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_with_max_sentences_override(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=True, max_sentences=5)
+        mock_scrape.assert_called_once_with("A1", max_points=5, max_sentences=5)
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_max_points_without_test(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=False, max_points=3)
+        mock_scrape.assert_called_once_with("A1", max_points=3, max_sentences=None)
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_prefix_in_filename(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=True)
+        mock_build.assert_called_once()
+        _, kwargs = mock_build.call_args
+        assert kwargs.get("filename_prefix") == "test_"
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_test_mode_suffix_in_save(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=True)
+        mock_save.assert_called()
+        _, kwargs = mock_save.call_args
+        assert kwargs.get("suffix") == "-test"
+
+    @patch("src.main.scraper.scrape_level")
+    @patch("src.main.scraper.save_level_data")
+    @patch("src.main.scraper.load_level_data")
+    @patch("src.main.deck_builder.build_and_export")
+    def test_normal_mode_no_suffix_in_save(
+        self, mock_build, mock_load, mock_save, mock_scrape, sample_level
+    ):
+        mock_scrape.return_value = sample_level
+        mock_load.return_value = sample_level
+        mock_build.return_value = Path("/fake/output.apkg")
+        run_pipeline(level_name="A1", test_mode=False)
+        mock_save.assert_called()
+        _, kwargs = mock_save.call_args
+        assert kwargs.get("suffix") == ""
