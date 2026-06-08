@@ -132,6 +132,7 @@ def create_models() -> dict[str, genanki.Model]:
         {"name": "Scrambled"},
         {"name": "Hanzi"},
         {"name": "Pinyin"},
+        {"name": "PinyinHtml"},
         {"name": "Translation"},
         {"name": "AudioField"},
         {"name": "WikiUrl"},
@@ -144,7 +145,6 @@ def create_models() -> dict[str, genanki.Model]:
 <div id="data-hanzi" style="display:none">{{Hanzi}}</div>
 <div id="data-pinyin" style="display:none">{{Pinyin}}</div>
 <div id="data-translation" style="display:none">{{Translation}}</div>
-<div id="data-audio" style="display:none">{{AudioField}}</div>
 <div id="data-wikiurl" style="display:none">{{WikiUrl}}</div>
 <div id="data-grammar" style="display:none">{{GrammarPoint}}</div>
 <div id="reorder-app">
@@ -152,15 +152,14 @@ def create_models() -> dict[str, genanki.Model]:
 <div id="word-container"></div>
 <p><button id="check-btn">Verificar</button></p>
 <p id="result-msg"></p>
-<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background:#fafafa;"></div>
+<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background: transparent;"></div>
 </div>
 <script>
 (function() {
 var words = document.getElementById('scrambled-data').textContent.split(' · ');
 var hanzi = document.getElementById('data-hanzi').textContent;
-var pinyin = document.getElementById('data-pinyin').textContent;
 var translation = document.getElementById('data-translation').textContent;
-var audio = document.getElementById('data-audio').textContent;
+var pinyinHtml = '{{PinyinHtml}}';
 var wikiUrl = document.getElementById('data-wikiurl').textContent;
 var grammar = document.getElementById('data-grammar').textContent;
 var correct = hanzi.replace(/ /g, '');
@@ -196,7 +195,7 @@ function onTileClick(i) {
 }
 
 function showAnswer() {
-  answerBox.innerHTML = hanzi + '<br><span class=\"pinyin\">' + pinyin + '</span><br><br>' + translation + '<br><br>' + audio + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
+  answerBox.innerHTML = pinyinHtml + '<br><br>' + translation + '<br><br>' + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
   answerBox.style.display = 'block';
 }
 
@@ -428,6 +427,7 @@ def _build_reorder_card(
             scrambled,
             sentence.hanzi,
             sentence.pinyin,
+            _build_word_pinyin_html(sentence.hanzi, sentence.pinyin),
             sentence.translation,
             audio_field,
             gp.full_url,
