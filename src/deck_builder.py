@@ -17,6 +17,15 @@ _CSS = """
 body { font-size: 24px; text-align: center; font-family: 'Noto Sans SC', 'Noto Sans', 'Microsoft YaHei', 'SimHei', 'WenQuanYi Micro Hei', sans-serif; }
 .pinyin { color: #666; font-size: 18px; }
 .translation { color: #444; font-size: 16px; }
+.wiki-link { font-size: 14px; }
+.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: #f0f0f0; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
+.word-tile:hover { background: #e0e0e0; }
+.word-tile.selected { border-color: #2196F3; background: #e3f2fd; }
+#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: #fff; }
+#check-btn:hover { background: #f5f5f5; }
+.correct { color: #2e7d32; font-weight: bold; font-size: 18px; }
+.incorrect { color: #c62828; font-weight: bold; font-size: 18px; }
+.reorder-help { color: #888; font-size: 14px; margin-top: 12px; }
 """
 
 
@@ -36,7 +45,7 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 1",
                 "qfmt": "{{Hanzi}}<br>{{AudioField}}",
-                "afmt": '{{Pinyin}}<br><br>{{Translation}}<br><br>{{AudioField}}<br><br>\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a>',
+                "afmt": '{{Hanzi}}<br><br>{{Pinyin}}<br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
@@ -57,14 +66,14 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 2",
                 "qfmt": "{{Translation}}",
-                "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{AudioField}}<br><br>\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a>',
+                "afmt": '{{Translation}}<br><br>{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
     )
 
     m3 = genanki.Model(
-        1607392321,
+        1607392324,
         "Cloze",
         model_type=1,
         fields=[
@@ -73,6 +82,7 @@ def create_models() -> dict[str, genanki.Model]:
             {"name": "KeyWord"},
             {"name": "KeyPinyin"},
             {"name": "KeyTranslation"},
+            {"name": "AudioField"},
             {"name": "WikiUrl"},
             {"name": "GrammarPoint"},
         ],
@@ -80,14 +90,14 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 3",
                 "qfmt": '{{cloze:HanziCloze}}<br><span class="pinyin">{{cloze:PinyinCloze}}</span>',
-                "afmt": '{{cloze:HanziCloze}}<br><span class="pinyin">{{cloze:PinyinCloze}}</span><br><br>{{KeyWord}} ({{KeyPinyin}}) = {{KeyTranslation}}<br><br>\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a>',
+                "afmt": '{{cloze:HanziCloze}}<br><span class="pinyin">{{cloze:PinyinCloze}}</span><br><br>{{KeyWord}} ({{KeyPinyin}}) = {{KeyTranslation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
     )
 
     m4 = genanki.Model(
-        1607392322,
+        1607392323,
         "Reorder",
         fields=[
             {"name": "Scrambled"},
@@ -101,8 +111,84 @@ def create_models() -> dict[str, genanki.Model]:
         templates=[
             {
                 "name": "Card 4",
-                "qfmt": "Arrange the words:<br><br>{{Scrambled}}",
-                "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br>{{AudioField}}<br><br>\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a>',
+                "qfmt": """<div id="scrambled-data" style="display:none">{{Scrambled}}</div>
+<div id="data-hanzi" style="display:none">{{Hanzi}}</div>
+<div id="data-pinyin" style="display:none">{{Pinyin}}</div>
+<div id="data-translation" style="display:none">{{Translation}}</div>
+<div id="data-audio" style="display:none">{{AudioField}}</div>
+<div id="data-wikiurl" style="display:none">{{WikiUrl}}</div>
+<div id="data-grammar" style="display:none">{{GrammarPoint}}</div>
+<div id="reorder-app">
+<p class="reorder-help">Toca dos palabras para intercambiarlas</p>
+<div id="word-container"></div>
+<p><button id="check-btn">Verificar</button></p>
+<p id="result-msg"></p>
+<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background:#fafafa;"></div>
+</div>
+<script>
+(function() {
+var words = document.getElementById('scrambled-data').textContent.split(' · ');
+var hanzi = document.getElementById('data-hanzi').textContent;
+var pinyin = document.getElementById('data-pinyin').textContent;
+var translation = document.getElementById('data-translation').textContent;
+var audio = document.getElementById('data-audio').textContent;
+var wikiUrl = document.getElementById('data-wikiurl').textContent;
+var grammar = document.getElementById('data-grammar').textContent;
+var correct = hanzi.replace(/ /g, '');
+var selected = null;
+var container = document.getElementById('word-container');
+var answerBox = document.getElementById('answer-box');
+var revealed = false;
+
+function render() {
+  container.innerHTML = '';
+  words.forEach(function(w, i) {
+    var tile = document.createElement('span');
+    tile.className = 'word-tile';
+    tile.textContent = w;
+    if (selected === i) tile.classList.add('selected');
+    tile.onclick = function() { onTileClick(i); };
+    container.appendChild(tile);
+  });
+}
+
+function onTileClick(i) {
+  if (selected === null) { selected = i; }
+  else if (selected === i) { selected = null; }
+  else {
+    var tmp = words[selected];
+    words[selected] = words[i];
+    words[i] = tmp;
+    selected = null;
+  }
+  render();
+  document.getElementById('result-msg').textContent = '';
+  document.getElementById('result-msg').className = '';
+}
+
+function showAnswer() {
+  answerBox.innerHTML = hanzi + '<br><span class=\"pinyin\">' + pinyin + '</span><br><br>' + translation + '<br><br>' + audio + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
+  answerBox.style.display = 'block';
+}
+
+function checkOrder() {
+  var userOrder = words.join('');
+  var msg = document.getElementById('result-msg');
+  if (userOrder === correct) {
+    msg.textContent = '\u2713 Correcto';
+    msg.className = 'correct';
+  } else {
+    msg.textContent = '\u2717 Incorrecto';
+    msg.className = 'incorrect';
+  }
+  if (!revealed) { showAnswer(); revealed = true; }
+}
+
+document.getElementById('check-btn').addEventListener('click', checkOrder);
+render();
+})();
+</script>""",
+                "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
@@ -290,6 +376,7 @@ def _build_cloze_card(
             kw,
             kw_py,
             sentence.translation,
+            audio_field,
             gp.full_url,
             gp.name,
         ],

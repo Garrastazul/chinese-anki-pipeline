@@ -103,6 +103,7 @@ def _run_single_level(
         invalid = sum(1 for gp in level.grammar_points for s in gp.sentences if not s.is_valid)
         with_kw = sum(1 for gp in level.grammar_points for s in gp.sentences if s.key_word)
         print(f"  Validation: {valid} valid, {invalid} invalid, {with_kw} with key_word")
+        print(f"  Grammar points with valid sentences: {len(level.grammar_points)}")
 
     if not skip_pinyin:
         logger.info("Step c) Regenerating pinyin for %s...", level_name)

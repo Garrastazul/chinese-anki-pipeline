@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+import jieba
 from pypinyin import lazy_pinyin, Style
 
 from src.models import ExampleSentence, GrammarLevel
@@ -11,16 +12,20 @@ logger = logging.getLogger(__name__)
 
 
 def regenerate_pinyin(hanzi: str) -> str:
-    parts = hanzi.split()
+    clean = hanzi.replace(" ", "")
+    words = jieba.lcut(clean)
     pinyin_parts = []
-    for part in parts:
-        py = "".join(lazy_pinyin(part, style=Style.TONE))
+    for word in words:
+        py = "".join(lazy_pinyin(word, style=Style.TONE))
         pinyin_parts.append(py)
     return " ".join(pinyin_parts)
 
 
 def regenerate_sentence_pinyin(sentence: ExampleSentence) -> ExampleSentence:
+    sentence.hanzi = sentence.hanzi.replace(" ", "")
     sentence.pinyin = regenerate_pinyin(sentence.hanzi)
+    if sentence.key_word:
+        sentence.key_word = sentence.key_word.replace(" ", "")
     return sentence
 
 

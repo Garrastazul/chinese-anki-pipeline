@@ -6,7 +6,7 @@
   },
   "tts": {
     "voice_gender": "male",
-    "rate": "-20%",
+    "rate": "-30%",
     "volume": "+0%",
     "pitch": "-20Hz"
   },

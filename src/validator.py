@@ -156,6 +156,16 @@ def validate_level(level: GrammarLevel) -> GrammarLevel:
     with tqdm(total=total, desc="Validating", unit="sent", ncols=120) as pbar:
         for gp in level.grammar_points:
             validate_grammar_point(gp, pbar)
+
+    before = len(level.grammar_points)
+    level.grammar_points = [
+        gp for gp in level.grammar_points if any(s.is_valid for s in gp.sentences)
+    ]
+    removed = before - len(level.grammar_points)
+    if removed:
+        logger.warning(
+            "Removed %d grammar point(s) with no valid sentences", removed
+        )
     return level
 
 

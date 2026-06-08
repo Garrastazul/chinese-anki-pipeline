@@ -620,3 +620,62 @@ class TestValidateLevel:
         assert mock_tqdm.call_args[1]["total"] == 2
         assert mock_tqdm.call_args[1]["desc"] == "Validating"
         assert mock_tqdm.call_args[1]["unit"] == "sent"
+
+    @patch("src.validator.validate_grammar_point")
+    def test_removes_gp_with_all_invalid(self, mock_vgp):
+        gp = GrammarPoint(
+            name="Test GP",
+            level="A1", url_slug="test", full_url="https://example.com",
+            sentences=[
+                ExampleSentence(hanzi="a", pinyin="a", translation="a", is_valid=False),
+                ExampleSentence(hanzi="b", pinyin="b", translation="b", is_valid=False),
+            ],
+        )
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        result = validate_level(level)
+        assert len(result.grammar_points) == 0
+
+    @patch("src.validator.validate_grammar_point")
+    def test_keeps_gp_with_mixed_validity(self, mock_vgp):
+        gp = GrammarPoint(
+            name="Test GP",
+            level="A1", url_slug="test", full_url="https://example.com",
+            sentences=[
+                ExampleSentence(hanzi="a", pinyin="a", translation="a", is_valid=False),
+                ExampleSentence(hanzi="b", pinyin="b", translation="b", is_valid=True),
+            ],
+        )
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        result = validate_level(level)
+        assert len(result.grammar_points) == 1
+        assert result.grammar_points[0] is gp
+
+    @patch("src.validator.validate_grammar_point")
+    def test_keeps_gp_with_all_valid(self, mock_vgp):
+        gp = GrammarPoint(
+            name="Test GP",
+            level="A1", url_slug="test", full_url="https://example.com",
+            sentences=[
+                ExampleSentence(hanzi="a", pinyin="a", translation="a", is_valid=True),
+            ],
+        )
+        level = GrammarLevel(level="A1", grammar_points=[gp])
+        result = validate_level(level)
+        assert len(result.grammar_points) == 1
+
+    @patch("src.validator.validate_grammar_point")
+    def test_removes_only_empty_gps(self, mock_vgp):
+        good_gp = GrammarPoint(
+            name="Good GP",
+            level="A1", url_slug="good", full_url="https://example.com",
+            sentences=[ExampleSentence(hanzi="a", pinyin="a", translation="a", is_valid=True)],
+        )
+        bad_gp = GrammarPoint(
+            name="Bad GP",
+            level="A1", url_slug="bad", full_url="https://example.com",
+            sentences=[ExampleSentence(hanzi="b", pinyin="b", translation="b", is_valid=False)],
+        )
+        level = GrammarLevel(level="A1", grammar_points=[good_gp, bad_gp])
+        result = validate_level(level)
+        assert len(result.grammar_points) == 1
+        assert result.grammar_points[0] is good_gp
