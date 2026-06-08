@@ -1,4 +1,4 @@
-import zipfile, sqlite3, json, io, tempfile, os
+import zipfile, sqlite3, json, tempfile, os
 
 apkg = r'output/test_chinese-grammar-a1.apkg'
 
@@ -6,7 +6,7 @@ with zipfile.ZipFile(apkg) as z:
     with z.open('collection.anki2') as f:
         raw = f.read()
 
-with tempfile.NamedTemporaryFile(suffix='.anki21', delete=False) as tmp:
+with tempfile.NamedTemporaryFile(suffix='.anki2', delete=False) as tmp:
     tmp.write(raw)
     tmp.flush()
     tmpname = tmp.name
@@ -23,33 +23,17 @@ try:
             for tmpl in model['tmpls']:
                 if tmpl.get('name') == 'Card 4':
                     qfmt = tmpl['qfmt']
-                    print(f"\n--- qfmt (first 300 chars) ---")
-                    print(qfmt[:300])
-                    print("...")
-                    
-                    print("\n--- Checks ---")
-                    if "split(' · ')" in qfmt or "split(\' · \')" in qfmt:
-                        print("GOOD: split with middle dot")
-                    else:
-                        idx = qfmt.find('.split(')
-                        if idx >= 0:
-                            print(f"ISSUE: split char = {repr(qfmt[idx:idx+50])}")
-                        else:
-                            print("ISSUE: split() not found!")
-                    
-                    if '+ audio +' in qfmt:
-                        print("GOOD: audio in innerHTML")
-                    else:
-                        print("ISSUE: audio NOT in innerHTML")
-                    
-                    print("pycmd found:" + (" YES (ISSUE)" if 'pycmd' in qfmt else " NO (GOOD)"))
-                    print("setTimeout found:" + (" YES (ISSUE)" if 'setTimeout' in qfmt else " NO (GOOD)"))
-                    print("function init found:" + (" YES (ISSUE)" if 'function init' in qfmt else " NO (GOOD)"))
-                    print("trim() found:" + (" YES (ISSUE)" if '.trim()' in qfmt else " NO (GOOD)"))
-                    
                     afmt = tmpl['afmt']
-                    print(f"\n--- afmt ---")
-                    print(afmt[:200])
+
+                    print("\n--- qfmt checks ---")
+                    print("data-audio div present:", "data-audio" in qfmt)
+                    print("'var hanzi' present:", "var hanzi" in qfmt)
+                    print("'var pinyinHtml' present:", "var pinyinHtml" in qfmt)
+                    print("audio = '{{AudioField}}' present:", "audio = '{{AudioField}}'" in qfmt or "audio = '{{AudioField}}'" in qfmt)
+                    print("pinyinHtml = '{{{PinyinHtml}}}' present:", "pinyinHtml = '{{{PinyinHtml}}}'" in qfmt)
+
+                    print("\n--- afmt ---")
+                    print(afmt)
     conn.close()
 finally:
     os.unlink(tmpname)

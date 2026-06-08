@@ -73,7 +73,7 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 1",
                 "qfmt": "{{Hanzi}}<br>{{AudioField}}",
-                "afmt": '{{{PinyinHtml}}}<br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+                "afmt": '{{PinyinHtml}}<br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
@@ -95,7 +95,7 @@ def create_models() -> dict[str, genanki.Model]:
             {
                 "name": "Card 2",
                 "qfmt": "{{Translation}}",
-                "afmt": '{{Translation}}<br><br>{{{PinyinHtml}}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+                "afmt": '{{Translation}}<br><br>{{PinyinHtml}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
