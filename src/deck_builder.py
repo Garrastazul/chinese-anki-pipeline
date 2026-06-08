@@ -18,11 +18,11 @@ body { font-size: 24px; text-align: center; font-family: 'Noto Sans SC', 'Noto S
 .pinyin { color: #666; font-size: 18px; }
 .translation { color: #444; font-size: 16px; }
 .wiki-link { font-size: 14px; }
-.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: #f0f0f0; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
-.word-tile:hover { background: #e0e0e0; }
-.word-tile.selected { border-color: #2196F3; background: #e3f2fd; }
-#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: #fff; }
-#check-btn:hover { background: #f5f5f5; }
+.word-tile { display: inline-block; padding: 10px 18px; margin: 8px; background: transparent; border: 2px solid #ccc; border-radius: 8px; cursor: pointer; font-size: 24px; user-select: none; transition: all 0.15s; }
+.word-tile:hover { background: transparent; }
+.word-tile.selected { border-color: #faa11b; background: transparent; }
+#check-btn { margin-top: 16px; padding: 8px 20px; font-size: 16px; cursor: pointer; border: 1px solid #999; border-radius: 6px; background: transparent; }
+#check-btn:hover { background: transparent; }
 .correct { color: #2e7d32; font-weight: bold; font-size: 18px; }
 .incorrect { color: #c62828; font-weight: bold; font-size: 18px; }
 .reorder-help { color: #888; font-size: 14px; margin-top: 12px; }
@@ -115,7 +115,7 @@ def create_models() -> dict[str, genanki.Model]:
 <div id="data-hanzi" style="display:none">{{Hanzi}}</div>
 <div id="data-pinyin" style="display:none">{{Pinyin}}</div>
 <div id="data-translation" style="display:none">{{Translation}}</div>
-<div id="data-audio" style="display:none">{{AudioField}}</div>
+<script>var audioFile = '{{AudioField}}';</script>
 <div id="data-wikiurl" style="display:none">{{WikiUrl}}</div>
 <div id="data-grammar" style="display:none">{{GrammarPoint}}</div>
 <div id="reorder-app">
@@ -123,7 +123,7 @@ def create_models() -> dict[str, genanki.Model]:
 <div id="word-container"></div>
 <p><button id="check-btn">Verificar</button></p>
 <p id="result-msg"></p>
-<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background:#fafafa;"></div>
+<div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background:transparent;"></div>
 </div>
 <script>
 (function() {
@@ -131,7 +131,7 @@ var words = document.getElementById('scrambled-data').textContent.split(' · ');
 var hanzi = document.getElementById('data-hanzi').textContent;
 var pinyin = document.getElementById('data-pinyin').textContent;
 var translation = document.getElementById('data-translation').textContent;
-var audio = document.getElementById('data-audio').textContent;
+var audio = audioFile;
 var wikiUrl = document.getElementById('data-wikiurl').textContent;
 var grammar = document.getElementById('data-grammar').textContent;
 var correct = hanzi.replace(/ /g, '');
@@ -167,8 +167,10 @@ function onTileClick(i) {
 }
 
 function showAnswer() {
-  answerBox.innerHTML = hanzi + '<br><span class=\"pinyin\">' + pinyin + '</span><br><br>' + translation + '<br><br>' + audio + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
+  answerBox.innerHTML = hanzi + '<br><span class=\"pinyin\">' + pinyin + '</span><br><br>' + translation + '<br><br><span class=\"wiki-link\">\U0001f4d6 <a href=\"' + wikiUrl + '\" target=\"_blank\">' + grammar + '</a></span>';
   answerBox.style.display = 'block';
+  var filename = audio.replace('[sound:', '').replace(']', '');
+  if (filename) { pycmd(\"play:\" + filename); }
 }
 
 function checkOrder() {
@@ -188,7 +190,7 @@ document.getElementById('check-btn').addEventListener('click', checkOrder);
 render();
 })();
 </script>""",
-                "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br>{{AudioField}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+                "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
             }
         ],
         css=_CSS,
@@ -435,11 +437,18 @@ def build_sentence_cards(
     num_types = len(config_types)
 
     type_index = 0
+    seen_hanzi: set[str] = set()
 
     for gp in level.grammar_points:
         for sentence in gp.sentences:
             if not sentence.is_valid:
                 continue
+
+            clean = sentence.hanzi.replace(" ", "")
+            if clean in seen_hanzi:
+                stats["skipped_duplicate"] = stats.get("skipped_duplicate", 0) + 1
+                continue
+            seen_hanzi.add(clean)
 
             audio_field = (
                 f"[sound:{sentence.audio_filename}]"

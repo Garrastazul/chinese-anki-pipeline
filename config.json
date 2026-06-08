@@ -6,7 +6,7 @@
   },
   "tts": {
     "voice_gender": "male",
-    "rate": "-30%",
+    "rate": "-40%",
     "volume": "+0%",
     "pitch": "-20Hz"
   },
@@ -21,7 +21,7 @@
     "sentence_delay": 0.5
   },
   "generation": {
-    "mode": "all",
+    "mode": "rotate", 
     "card_types": ["hanzi_full", "en_hanzi", "cloze", "reorder"]
   }
 }

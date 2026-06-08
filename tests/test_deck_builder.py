@@ -278,7 +278,14 @@ class TestBuildSentenceCardsRotate:
 
 
 class TestBuildSentenceCards:
-    def test_generates_all_card_types(self, sample_sentence_full):
+    @patch("src.deck_builder.get")
+    def test_generates_all_card_types(self, mock_get, sample_sentence_full):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
+
         gp = GrammarPoint(
             name="Test Point", level="A1", url_slug="test",
             full_url="https://example.com/test",
@@ -291,7 +298,13 @@ class TestBuildSentenceCards:
 
         assert len(notes) == 4
 
-    def test_skips_invalid_sentences(self):
+    @patch("src.deck_builder.get")
+    def test_skips_invalid_sentences(self, mock_get):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
         valid = ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word="好", audio_filename="x.mp3")
         invalid = ExampleSentence(hanzi="坏", pinyin="huài", translation="bad", is_valid=False, key_word=None)
         gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[valid, invalid])
@@ -301,7 +314,13 @@ class TestBuildSentenceCards:
         notes = build_sentence_cards(level, models)
         assert len(notes) == 3
 
-    def test_skips_cloze_when_no_keyword(self):
+    @patch("src.deck_builder.get")
+    def test_skips_cloze_when_no_keyword(self, mock_get):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
         s = ExampleSentence(hanzi="好 吗", pinyin="Hǎo ma", translation="OK?", is_valid=True, key_word=None)
         gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
         level = GrammarLevel(level="A1", grammar_points=[gp])
@@ -311,7 +330,13 @@ class TestBuildSentenceCards:
         assert len(notes) == 3
         assert models is not None
 
-    def test_skips_reorder_when_single_word(self):
+    @patch("src.deck_builder.get")
+    def test_skips_reorder_when_single_word(self, mock_get):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
         s = ExampleSentence(hanzi="好", pinyin="hǎo", translation="good", is_valid=True, key_word="好")
         gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
         level = GrammarLevel(level="A1", grammar_points=[gp])
@@ -320,7 +345,13 @@ class TestBuildSentenceCards:
         notes = build_sentence_cards(level, models)
         assert len(notes) == 3
 
-    def test_all_notes_have_guid(self):
+    @patch("src.deck_builder.get")
+    def test_all_notes_have_guid(self, mock_get):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
         s = ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去", audio_filename="x.mp3")
         gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
         level = GrammarLevel(level="A1", grammar_points=[gp])
@@ -331,7 +362,13 @@ class TestBuildSentenceCards:
             assert note.guid is not None
             assert len(note.guid) > 0
 
-    def test_guids_are_unique(self):
+    @patch("src.deck_builder.get")
+    def test_guids_are_unique(self, mock_get):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
         s = ExampleSentence(hanzi="我们 去 学校", pinyin="Wǒmen qù xuéxiào", translation="We go to school", is_valid=True, key_word="去", audio_filename="x.mp3")
         gp = GrammarPoint(name="T", level="A1", url_slug="t", full_url="x", sentences=[s])
         level = GrammarLevel(level="A1", grammar_points=[gp])
@@ -340,6 +377,22 @@ class TestBuildSentenceCards:
         notes = build_sentence_cards(level, models)
         guids = [n.guid for n in notes]
         assert len(guids) == len(set(guids))
+
+    @patch("src.deck_builder.get")
+    def test_skips_duplicate_hanzi_across_grammar_points(self, mock_get):
+        def mock_get_side_effect(key, default=None):
+            if key == "generation.mode":
+                return "all"
+            return default
+        mock_get.side_effect = mock_get_side_effect
+        s = ExampleSentence(hanzi="我们 去", pinyin="Wǒmen qù", translation="We go", is_valid=True, key_word="去", audio_filename="x.mp3")
+        gp1 = GrammarPoint(name="GP1", level="A1", url_slug="gp1", full_url="x", sentences=[s])
+        gp2 = GrammarPoint(name="GP2", level="A1", url_slug="gp2", full_url="y", sentences=[s])
+        level = GrammarLevel(level="A1", grammar_points=[gp1, gp2])
+        models = create_models()
+
+        notes = build_sentence_cards(level, models)
+        assert len(notes) == 4
 
 
 class TestBuildDeck:
