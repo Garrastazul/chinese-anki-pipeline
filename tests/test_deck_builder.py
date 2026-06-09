@@ -225,7 +225,7 @@ class TestBuildSentenceCardsRotate:
             notes = build_sentence_cards(level, models)
             assert len(notes) == 3
             model_names = [n.model.name for n in notes]
-            # 0 → hanzi_full, 1 → en_hanzi, 2 → cloze not avail, reorder not avail, → hanzi_full
+            # 0 -> hanzi_full, 1 -> en_hanzi, 2 -> cloze not avail, reorder not avail, -> hanzi_full
             assert model_names == ["Hanzi->Full", "EN->Hanzi", "Hanzi->Full"]
 
     def test_rotate_guids_unique(self, sample_level):

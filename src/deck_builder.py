@@ -126,7 +126,7 @@ def create_models() -> dict[str, genanki.Model]:
     )
 
     m4 = genanki.Model(
-    1607392332,          # ← ID nuevo para que Anki acepte el template actualizado
+    1607392332,          # ← new ID so Anki accepts the updated template
     "Reorder",
     fields=[
         {"name": "Scrambled"},
@@ -148,9 +148,9 @@ def create_models() -> dict[str, genanki.Model]:
 <div id="data-wikiurl" style="display:none">{{WikiUrl}}</div>
 <div id="data-grammar" style="display:none">{{GrammarPoint}}</div>
 <div id="reorder-app">
-<p class="reorder-help">Toca dos palabras para intercambiarlas</p>
+<p class="reorder-help">Tap two words to swap them</p>
 <div id="word-container"></div>
-<p><button id="check-btn">Verificar</button></p>
+<p><button id="check-btn">Check</button></p>
 <p id="result-msg"></p>
 <div id="answer-box" style="display:none; margin-top:16px; padding:12px; border:1px solid #ddd; border-radius:8px; background: transparent;"></div>
 </div>
@@ -205,18 +205,21 @@ function checkOrder() {
   if (userOrder === correct) {
     msg.textContent = '\u2713 Correcto';
     msg.className = 'correct';
+    window._reorderEase = '3';
   } else {
     msg.textContent = '\u2717 Incorrecto';
     msg.className = 'incorrect';
+    window._reorderEase = '1';
   }
-  if (!revealed) { showAnswer(); revealed = true; }
+  showAnswer();
+  revealed = true;
 }
 
 document.getElementById('check-btn').addEventListener('click', checkOrder);
 render();
 })();
 </script>""",
-            "afmt": '{{Hanzi}}<br><span class="pinyin">{{Pinyin}}</span><br><br>{{Translation}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span>',
+            "afmt": '<div id="afmt-result" style="font-size:18px;font-weight:bold;margin-bottom:12px;"></div><div style="font-size:24px;">{{Hanzi}}</div><br>{{PinyinHtml}}<br><br>{{Translation}}<br><br><span class="wiki-link">\U0001f4d6 <a href="{{WikiUrl}}" target="_blank">{{GrammarPoint}}</a></span><script>(function(){var e=window._reorderEase;var r=document.getElementById("afmt-result");if(e){r.textContent=e==="3"?"\u2713 Correcto":"\u2717 Incorrecto";r.style.color=e==="3"?"#2e7d32":"#c62828";var d=e==="3"?800:2800;}})();</script>',
         }
     ],
     css=_CSS,
